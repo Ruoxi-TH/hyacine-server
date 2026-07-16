@@ -97,8 +97,4 @@ pnpm start:prod
 
 ## 客户端
 
-React Native 客户端仓库：[Hyacine.music](https://github.com/Ruoxi-TH/Hyacine-music)。
-
-## 许可证
-
-私有项目，保留所有权利。
+React Native 客户端位于 [Hyacine.music](https://github.com/Ruoxi-TH/Hyacine-music)。

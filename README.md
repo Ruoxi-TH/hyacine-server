@@ -98,7 +98,3 @@ Music providers are isolated in `src/music-sources`. Additional providers can be
 ## Client
 
 The React Native client is maintained at [Hyacine.music](https://github.com/Ruoxi-TH/Hyacine-music).
-
-## License
-
-Private project. All rights reserved.
