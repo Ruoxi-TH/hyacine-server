@@ -7,8 +7,11 @@ interface NeteaseRecommendResponse { recommend?: Array<{ id?: number; name?: str
 interface NeteaseAccountResponse { account?: { id?: number }; profile?: { userId?: number }; code?: number; }
 interface NeteaseUserPlaylistsResponse { playlist?: Array<{ id?: number; name?: string; coverImgUrl?: string; playCount?: number; trackCount?: number; description?: string }>; code?: number; }
 interface NeteaseSearchResponse { result?: { songs?: Array<{ id?: number; name?: string; artists?: Array<{ name?: string }>; album?: { name?: string; picUrl?: string }; duration?: number }> }; code?: number; }
+interface BilibiliNavResponse { code?: number; data?: { isLogin?: boolean }; }
+interface BilibiliSearchResponse { code?: number; data?: { result?: Array<{ bvid?: string; title?: string; author?: string; pic?: string; duration?: string }> }; }
 export interface NeteasePlaylist { id: number; name: string; coverUrl: string; playCount: number; trackCount: number; description: string; }
 export interface NeteaseTrack { id: number; title: string; artists: string[]; album: string; coverUrl: string; durationMs: number; source: 'netease'; }
+export interface BilibiliTrack { id: string; title: string; artists: string[]; coverUrl: string; duration: string; source: 'bilibili'; }
 
 @Injectable()
 export class MusicSourcesService {
@@ -73,15 +76,45 @@ export class MusicSourcesService {
       source: 'netease' as const,
     }] : []);
   }
-  validateBilibiliCookie(cookie: string): { valid: boolean } {
+  async validateBilibiliCookie(cookie: string): Promise<{ valid: boolean }> {
     const names = new Set(cookie.split(';').map((part) => part.trim().split('=')[0]));
-    return { valid: names.has('SESSDATA') && names.has('bili_jct') };
+    if (!names.has('SESSDATA') || !names.has('bili_jct')) return { valid: false };
+    try {
+      const result = await this.bilibiliRequest<BilibiliNavResponse>('/x/web-interface/nav', cookie);
+      return { valid: result.code === 0 && result.data?.isLogin === true };
+    } catch {
+      return { valid: false };
+    }
+  }
+
+  async searchBilibili(keywords: string, limit = 20, cookie?: string): Promise<BilibiliTrack[]> {
+    const query = new URLSearchParams({ keyword: keywords.trim(), search_type: 'video', page: '1', page_size: String(limit) });
+    const result = await this.bilibiliRequest<BilibiliSearchResponse>(`/x/web-interface/search/type?${query.toString()}`, cookie);
+    if (result.code !== 0) throw new ServiceUnavailableException('Bilibili search is unavailable');
+    return (result.data?.result ?? []).flatMap((item) => item.bvid && item.title ? [{
+      id: item.bvid,
+      title: item.title.replace(/<[^>]*>/g, ''),
+      artists: item.author ? [item.author] : [],
+      coverUrl: item.pic?.startsWith('//') ? `https:${item.pic}` : item.pic ?? '',
+      duration: item.duration ?? '',
+      source: 'bilibili' as const,
+    }] : []);
   }
 
   private neteaseBaseUrl(): string {
     const value = this.config.get<string>('NETEASE_API_BASE');
     if (!value) throw new ServiceUnavailableException('NETEASE_API_BASE is not configured');
     return value.replace(/\/$/, '');
+  }
+
+  private async bilibiliRequest<T>(path: string, cookie?: string): Promise<T> {
+    try {
+      const response = await fetch(`https://api.bilibili.com${path}`, { headers: { Accept: 'application/json', Referer: 'https://www.bilibili.com/', 'User-Agent': 'HyacineServer/1.0', ...(cookie ? { Cookie: cookie } : {}) }, signal: AbortSignal.timeout(10_000) });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json() as T;
+    } catch {
+      throw new ServiceUnavailableException('Bilibili provider is unavailable');
+    }
   }
 
   private async request<T>(base: string, path: string, cookie?: string): Promise<T> {

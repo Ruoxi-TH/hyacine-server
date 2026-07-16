@@ -8,8 +8,8 @@
 
 - PostgreSQL 持久化用户、歌单、收藏、播放历史、歌手、专辑和歌曲
 - JWT 注册、登录、刷新令牌、退出登录和当前用户接口
-- 兼容 NeteaseCloudMusicApi 的网易云扫码登录、推荐歌单和个人歌单代理
-- Bilibili Cookie 格式校验
+- 内置 NeteaseCloudMusicApi 服务，提供网易云扫码登录、推荐歌单、个人歌单和歌曲搜索
+- Bilibili 真实登录状态校验和视频搜索
 - CORS、Helmet、DTO 校验和健康检查
 
 ## 依赖
@@ -18,7 +18,7 @@
 - pnpm 11
 - PostgreSQL
 - Redis
-- 用于网易云功能的 NeteaseCloudMusicApi 兼容服务
+- 用于内置生产部署的 Docker 与 Docker Compose
 
 ## 快速开始
 
@@ -54,16 +54,16 @@ pnpm start:prod
 
 ## Docker 部署
 
-Docker Compose 会同时启动 API、PostgreSQL 和 Redis。目标服务器上克隆本仓库后，创建生产环境文件并启动：
+Docker Compose 会同时启动 API、PostgreSQL、Redis 和 NeteaseCloudMusicApi 容器。目标服务器上克隆本仓库后，创建生产环境文件并启动：
 
 ```bash
 cp .env.deploy.example .env
-# 编辑 .env，设置强密码、JWT 密钥、CORS_ORIGIN 与 NETEASE_API_BASE。
+# 编辑 .env，设置强密码、JWT 密钥和 CORS_ORIGIN。
 docker compose up -d --build
 curl http://127.0.0.1:3000/api/v1/health
 ```
 
-`NETEASE_API_BASE` 必须指向单独部署的 NeteaseCloudMusicApi 兼容服务；本仓库不内置也不实现该上游服务。
+API 默认通过 `http://netease:3000` 使用内置服务。除非要主动替换内部上游，否则不要在该部署中设置 `NETEASE_API_BASE`。
 
 ### GitHub Actions 部署
 
@@ -91,7 +91,7 @@ curl http://127.0.0.1:3000/api/v1/health
 | `JWT_REFRESH_SECRET` | 是 | 至少 32 字符的 Refresh Token 签名密钥。 |
 | `JWT_ACCESS_TTL` | 否 | Access Token 有效期，默认 `15m`。 |
 | `JWT_REFRESH_TTL` | 否 | Refresh Token 有效期，默认 `30d`。 |
-| `NETEASE_API_BASE` | 网易云功能需要 | NeteaseCloudMusicApi 兼容服务的基础地址。 |
+| `NETEASE_API_BASE` | Compose 中否 | 可选的 NeteaseCloudMusicApi 上游覆盖地址；Compose 默认使用内置 `netease` 服务。 |
 
 不要提交 `.env` 或生产密钥。`CORS_ORIGIN` 应只填写需要浏览器访问的确切来源。移动端首次设置时，填写设备能够访问的服务器地址。
 
@@ -105,7 +105,7 @@ curl http://127.0.0.1:3000/api/v1/health
 | 认证 | `POST /auth/register`、`POST /auth/login`、`POST /auth/refresh`、`POST /auth/logout` |
 | 用户 | `GET /users/me` |
 | 网易云 | `GET /music-sources/netease/qr`、`GET /music-sources/netease/qr/:key`、`POST /music-sources/netease/recommendations`、`POST /music-sources/netease/playlists`、`POST /music-sources/netease/search` |
-| Bilibili | `POST /music-sources/bilibili/validate-cookie` |
+| Bilibili | `POST /music-sources/bilibili/validate-cookie`、`POST /music-sources/bilibili/search` |
 
 需要认证的接口必须携带 Access Token。DTO 校验会拒绝未声明的请求字段。
 
@@ -113,8 +113,8 @@ curl http://127.0.0.1:3000/api/v1/health
 
 ### 当前已接入
 
-- **网易云音乐**：创建和轮询扫码会话、读取推荐歌单、读取当前登录账号的个人歌单。依赖 `NETEASE_API_BASE` 与兼容的上游服务。
-- **Bilibili**：只校验提交的 Cookie 是否包含 `SESSDATA` 和 `bili_jct`。目前不提供 Bilibili 搜索、播放、收藏或歌单同步。
+- **网易云音乐**：创建和轮询扫码会话、读取推荐歌单、读取当前登录账号的个人歌单和歌曲搜索。Docker Compose 会在内部提供 NeteaseCloudMusicApi 上游。
+- **Bilibili**：通过官方 `nav` 接口校验真实登录状态，并代理公开视频搜索。目前不提供音频播放 URL 解析、收藏或歌单同步。
 
 网易云 Cookie 由客户端在单次音乐源请求中传入，服务端不会将其写入数据库。
 

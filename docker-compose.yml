@@ -10,6 +10,7 @@ services:
     environment:
       DATABASE_URL: postgresql://hyacine:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/hyacine?schema=public
       REDIS_URL: redis://redis:6379
+      NETEASE_API_BASE: http://netease:3000
       PORT: 3000
     ports:
       - "${API_PORT:-3000}:3000"
@@ -18,6 +19,17 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      netease:
+        condition: service_started
+
+  netease:
+    image: binaryify/netease_cloud_music_api:latest
+    container_name: hyacine-netease
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+    expose:
+      - "3000"
 
   postgres:
     image: postgres:16-alpine
