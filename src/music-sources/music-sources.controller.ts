@@ -2,7 +2,8 @@ import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
 import { BilibiliCookieDto } from './dto/bilibili-cookie.dto';
 import { NeteaseRecommendationsDto } from './dto/netease-recommendations.dto';
 import { NeteasePlaylistsDto } from './dto/netease-playlists.dto';
-import { MusicSourcesService, type NeteasePlaylist } from './music-sources.service';
+import { NeteaseSearchDto } from './dto/netease-search.dto';
+import { MusicSourcesService, type NeteasePlaylist, type NeteaseTrack } from './music-sources.service';
 
 @Controller('music-sources')
 export class MusicSourcesController {
@@ -28,8 +29,11 @@ export class MusicSourcesController {
   getNeteasePlaylists(@Body() dto: NeteasePlaylistsDto): Promise<NeteasePlaylist[]> {
     return this.sources.getNeteasePlaylists(dto.cookie);
   }
-
-
+  @Post('netease/search')
+  @HttpCode(200)
+  searchNetease(@Body() dto: NeteaseSearchDto): Promise<NeteaseTrack[]> {
+    return this.sources.searchNetease(dto.keywords, dto.limit, dto.cookie);
+  }
   @Post('bilibili/validate-cookie')
   @HttpCode(200)
   validateBilibiliCookie(@Body() dto: BilibiliCookieDto): { valid: boolean } {

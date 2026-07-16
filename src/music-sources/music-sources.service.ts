@@ -6,7 +6,9 @@ interface NeteaseStatusResponse { code?: number; cookie?: string; message?: stri
 interface NeteaseRecommendResponse { recommend?: Array<{ id?: number; name?: string; picUrl?: string; playcount?: number; trackCount?: number; copywriter?: string }>; code?: number; }
 interface NeteaseAccountResponse { account?: { id?: number }; profile?: { userId?: number }; code?: number; }
 interface NeteaseUserPlaylistsResponse { playlist?: Array<{ id?: number; name?: string; coverImgUrl?: string; playCount?: number; trackCount?: number; description?: string }>; code?: number; }
+interface NeteaseSearchResponse { result?: { songs?: Array<{ id?: number; name?: string; artists?: Array<{ name?: string }>; album?: { name?: string; picUrl?: string }; duration?: number }> }; code?: number; }
 export interface NeteasePlaylist { id: number; name: string; coverUrl: string; playCount: number; trackCount: number; description: string; }
+export interface NeteaseTrack { id: number; title: string; artists: string[]; album: string; coverUrl: string; durationMs: number; source: 'netease'; }
 
 @Injectable()
 export class MusicSourcesService {
@@ -58,6 +60,19 @@ export class MusicSourcesService {
     }] : []);
   }
 
+  async searchNetease(keywords: string, limit = 20, cookie?: string): Promise<NeteaseTrack[]> {
+    const query = new URLSearchParams({ keywords: keywords.trim(), limit: String(limit), timestamp: String(Date.now()) });
+    const result = await this.request<NeteaseSearchResponse>(this.neteaseBaseUrl(), `/cloudsearch?${query.toString()}`, cookie);
+    return (result.result?.songs ?? []).flatMap((song) => song.id && song.name ? [{
+      id: song.id,
+      title: song.name,
+      artists: (song.artists ?? []).flatMap((artist) => artist.name ? [artist.name] : []),
+      album: song.album?.name ?? '',
+      coverUrl: song.album?.picUrl ?? '',
+      durationMs: song.duration ?? 0,
+      source: 'netease' as const,
+    }] : []);
+  }
   validateBilibiliCookie(cookie: string): { valid: boolean } {
     const names = new Set(cookie.split(';').map((part) => part.trim().split('=')[0]));
     return { valid: names.has('SESSDATA') && names.has('bili_jct') };
