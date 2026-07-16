@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 
 interface NeteaseQrResponse { data?: { unikey?: string; qrurl?: string }; code?: number; }
 interface NeteaseStatusResponse { code?: number; cookie?: string; message?: string; }
+interface NeteaseRecommendResponse { recommend?: Array<{ id?: number; name?: string; picUrl?: string; playcount?: number; trackCount?: number; copywriter?: string }>; code?: number; }
+export interface NeteasePlaylist { id: number; name: string; coverUrl: string; playCount: number; trackCount: number; description: string; }
 
 @Injectable()
 export class MusicSourcesService {
@@ -26,6 +28,18 @@ export class MusicSourcesService {
     return { status: 'pending', message: result.message };
   }
 
+  async getNeteaseRecommendations(cookie: string): Promise<NeteasePlaylist[]> {
+    const result = await this.request<NeteaseRecommendResponse>(this.neteaseBaseUrl(), `/recommend/resource?timestamp=${Date.now()}`, cookie);
+    return (result.recommend ?? []).flatMap((item) => item.id && item.name && item.picUrl ? [{
+      id: item.id,
+      name: item.name,
+      coverUrl: item.picUrl,
+      playCount: item.playcount ?? 0,
+      trackCount: item.trackCount ?? 0,
+      description: item.copywriter ?? '',
+    }] : []);
+  }
+
   validateBilibiliCookie(cookie: string): { valid: boolean } {
     const names = new Set(cookie.split(';').map((part) => part.trim().split('=')[0]));
     return { valid: names.has('SESSDATA') && names.has('bili_jct') };
@@ -37,9 +51,9 @@ export class MusicSourcesService {
     return value.replace(/\/$/, '');
   }
 
-  private async request<T>(base: string, path: string): Promise<T> {
+  private async request<T>(base: string, path: string, cookie?: string): Promise<T> {
     try {
-      const response = await fetch(`${base}${path}`, { headers: { Accept: 'application/json' } });
+      const response = await fetch(`${base}${path}`, { headers: { Accept: 'application/json', ...(cookie ? { Cookie: cookie } : {}) } });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.json() as T;
     } catch {
