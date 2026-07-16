@@ -52,6 +52,33 @@ pnpm build
 pnpm start:prod
 ```
 
+## Docker Deployment
+
+Docker Compose starts the API, PostgreSQL, and Redis together. On the target host, clone this repository, create the production environment file, then start it:
+
+```bash
+cp .env.deploy.example .env
+# Edit .env with strong passwords, JWT secrets, CORS_ORIGIN, and NETEASE_API_BASE.
+docker compose up -d --build
+curl http://127.0.0.1:3000/api/v1/health
+```
+
+`NETEASE_API_BASE` must point to a separately deployed NeteaseCloudMusicApi-compatible service. This repository does not bundle or implement that upstream service.
+
+### GitHub Actions deployment
+
+`.github/workflows/deploy.yml` is a manual `workflow_dispatch` deployment for an existing Docker host. Create a `production` GitHub environment and set these secrets:
+
+| Secret | Purpose |
+| --- | --- |
+| `DEPLOY_HOST` | Server hostname or IP. |
+| `DEPLOY_USER` | SSH user with Docker access. |
+| `DEPLOY_SSH_KEY` | Private SSH key for that user. |
+| `DEPLOY_PORT` | Optional SSH port; defaults to `22`. |
+| `DEPLOY_PATH` | Absolute path of the cloned `hyacine-server` repository. |
+
+The target directory must contain a server-local `.env` created from `.env.deploy.example`. The workflow fetches `master`, rebuilds Compose services, and verifies the health endpoint.
+
 ## Configuration
 
 | Variable | Required | Purpose |
@@ -77,7 +104,7 @@ All routes are prefixed with `/api/v1`.
 | Health | `GET /health` |
 | Authentication | `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout` |
 | User | `GET /users/me` |
-| Netease | `GET /music-sources/netease/qr`, `GET /music-sources/netease/qr/:key`, `POST /music-sources/netease/recommendations`, `POST /music-sources/netease/playlists` |
+| Netease | `GET /music-sources/netease/qr`, `GET /music-sources/netease/qr/:key`, `POST /music-sources/netease/recommendations`, `POST /music-sources/netease/playlists`, `POST /music-sources/netease/search` |
 | Bilibili | `POST /music-sources/bilibili/validate-cookie` |
 
 Authenticated routes require an access token. DTO validation rejects unknown request fields.

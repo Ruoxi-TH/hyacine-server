@@ -1,4 +1,24 @@
 services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hyacine-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://hyacine:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/hyacine?schema=public
+      REDIS_URL: redis://redis:6379
+      PORT: 3000
+    ports:
+      - "${API_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   postgres:
     image: postgres:16-alpine
     container_name: hyacine-postgres
@@ -6,7 +26,7 @@ services:
     environment:
       POSTGRES_DB: hyacine
       POSTGRES_USER: hyacine
-      POSTGRES_PASSWORD: change_this_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:

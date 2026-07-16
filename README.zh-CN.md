@@ -52,6 +52,33 @@ pnpm build
 pnpm start:prod
 ```
 
+## Docker 部署
+
+Docker Compose 会同时启动 API、PostgreSQL 和 Redis。目标服务器上克隆本仓库后，创建生产环境文件并启动：
+
+```bash
+cp .env.deploy.example .env
+# 编辑 .env，设置强密码、JWT 密钥、CORS_ORIGIN 与 NETEASE_API_BASE。
+docker compose up -d --build
+curl http://127.0.0.1:3000/api/v1/health
+```
+
+`NETEASE_API_BASE` 必须指向单独部署的 NeteaseCloudMusicApi 兼容服务；本仓库不内置也不实现该上游服务。
+
+### GitHub Actions 部署
+
+`.github/workflows/deploy.yml` 是用于已有 Docker 主机的手动 `workflow_dispatch` 工作流。创建 GitHub `production` Environment，并配置以下 Secrets：
+
+| Secret | 用途 |
+| --- | --- |
+| `DEPLOY_HOST` | 服务器域名或 IP。 |
+| `DEPLOY_USER` | 具有 Docker 权限的 SSH 用户。 |
+| `DEPLOY_SSH_KEY` | 该用户的 SSH 私钥。 |
+| `DEPLOY_PORT` | 可选 SSH 端口，默认 `22`。 |
+| `DEPLOY_PATH` | 服务器上克隆的 `hyacine-server` 绝对路径。 |
+
+服务器目录必须预先存在从 `.env.deploy.example` 创建的本地 `.env`。工作流会拉取 `master`、重建 Compose 服务，并验证健康检查接口。
+
 ## 环境变量
 
 | 变量 | 必填 | 用途 |
@@ -77,7 +104,7 @@ pnpm start:prod
 | 健康检查 | `GET /health` |
 | 认证 | `POST /auth/register`、`POST /auth/login`、`POST /auth/refresh`、`POST /auth/logout` |
 | 用户 | `GET /users/me` |
-| 网易云 | `GET /music-sources/netease/qr`、`GET /music-sources/netease/qr/:key`、`POST /music-sources/netease/recommendations`、`POST /music-sources/netease/playlists` |
+| 网易云 | `GET /music-sources/netease/qr`、`GET /music-sources/netease/qr/:key`、`POST /music-sources/netease/recommendations`、`POST /music-sources/netease/playlists`、`POST /music-sources/netease/search` |
 | Bilibili | `POST /music-sources/bilibili/validate-cookie` |
 
 需要认证的接口必须携带 Access Token。DTO 校验会拒绝未声明的请求字段。
