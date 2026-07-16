@@ -1,0 +1,127 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  passwordHash    String
+  displayName     String
+  avatarUrl       String?
+  refreshTokenHash String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  playlists       Playlist[]
+  playlistTracks  PlaylistTrack[]
+  favorites       Favorite[]
+  history         PlayHistory[]
+}
+
+model Artist {
+  id        String   @id @default(cuid())
+  name      String
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  albums    Album[]
+  tracks    Track[]
+
+  @@index([name])
+}
+
+model Album {
+  id          String   @id @default(cuid())
+  title       String
+  coverUrl    String?
+  releaseDate DateTime?
+  artistId    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  artist      Artist   @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  tracks      Track[]
+
+  @@index([artistId])
+  @@index([title])
+}
+
+model Track {
+  id           String          @id @default(cuid())
+  title        String
+  durationMs   Int
+  audioUrl     String
+  coverUrl     String?
+  sourceType   String          @default("UPLOAD")
+  sourceRef    String?
+  artistId     String
+  albumId      String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  artist       Artist          @relation(fields: [artistId], references: [id], onDelete: Restrict)
+  album        Album?          @relation(fields: [albumId], references: [id], onDelete: SetNull)
+  playlistTracks PlaylistTrack[]
+  favorites    Favorite[]
+  history      PlayHistory[]
+
+  @@index([artistId])
+  @@index([albumId])
+  @@index([title])
+}
+
+model Playlist {
+  id          String             @id @default(cuid())
+  name        String
+  description String?
+  coverUrl    String?
+  visibility  String             @default("PRIVATE")
+  ownerId     String
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  owner       User               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  tracks      PlaylistTrack[]
+
+  @@index([ownerId])
+}
+
+model PlaylistTrack {
+  playlistId String
+  trackId    String
+  userId     String
+  position   Int
+  addedAt    DateTime @default(now())
+  playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  track      Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  addedBy    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([playlistId, trackId])
+  @@unique([playlistId, position])
+  @@index([trackId])
+}
+
+model Favorite {
+  userId    String
+  trackId   String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  track     Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@id([userId, trackId])
+  @@index([trackId])
+}
+
+model PlayHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  trackId   String
+  playedAt  DateTime @default(now())
+  progressMs Int?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  track     Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@index([userId, playedAt])
+  @@index([trackId])
+}
