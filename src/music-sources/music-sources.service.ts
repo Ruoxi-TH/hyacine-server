@@ -4,6 +4,8 @@ import { ConfigService } from '@nestjs/config';
 interface NeteaseQrResponse { data?: { unikey?: string; qrurl?: string }; code?: number; }
 interface NeteaseStatusResponse { code?: number; cookie?: string; message?: string; }
 interface NeteaseRecommendResponse { recommend?: Array<{ id?: number; name?: string; picUrl?: string; playcount?: number; trackCount?: number; copywriter?: string }>; code?: number; }
+interface NeteaseAccountResponse { account?: { id?: number }; profile?: { userId?: number }; code?: number; }
+interface NeteaseUserPlaylistsResponse { playlist?: Array<{ id?: number; name?: string; coverImgUrl?: string; playCount?: number; trackCount?: number; description?: string }>; code?: number; }
 export interface NeteasePlaylist { id: number; name: string; coverUrl: string; playCount: number; trackCount: number; description: string; }
 
 @Injectable()
@@ -37,6 +39,22 @@ export class MusicSourcesService {
       playCount: item.playcount ?? 0,
       trackCount: item.trackCount ?? 0,
       description: item.copywriter ?? '',
+    }] : []);
+  }
+
+  async getNeteasePlaylists(cookie: string): Promise<NeteasePlaylist[]> {
+    const base = this.neteaseBaseUrl();
+    const account = await this.request<NeteaseAccountResponse>(base, `/user/account?timestamp=${Date.now()}`, cookie);
+    const userId = account.profile?.userId ?? account.account?.id;
+    if (!userId) throw new ServiceUnavailableException('Netease account is unavailable');
+    const result = await this.request<NeteaseUserPlaylistsResponse>(base, `/user/playlist?uid=${encodeURIComponent(String(userId))}&timestamp=${Date.now()}`, cookie);
+    return (result.playlist ?? []).flatMap((item) => item.id && item.name && item.coverImgUrl ? [{
+      id: item.id,
+      name: item.name,
+      coverUrl: item.coverImgUrl,
+      playCount: item.playCount ?? 0,
+      trackCount: item.trackCount ?? 0,
+      description: item.description ?? '',
     }] : []);
   }
 

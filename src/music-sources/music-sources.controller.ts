@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
 import { BilibiliCookieDto } from './dto/bilibili-cookie.dto';
 import { NeteaseRecommendationsDto } from './dto/netease-recommendations.dto';
+import { NeteasePlaylistsDto } from './dto/netease-playlists.dto';
 import { MusicSourcesService, type NeteasePlaylist } from './music-sources.service';
 
 @Controller('music-sources')
@@ -16,12 +17,18 @@ export class MusicSourcesController {
   pollNeteaseQr(@Param('key') key: string): Promise<{ status: 'pending' | 'confirmed' | 'expired'; cookie?: string; message?: string }> {
     return this.sources.pollNeteaseQr(key);
   }
-
   @Post('netease/recommendations')
   @HttpCode(200)
   getNeteaseRecommendations(@Body() dto: NeteaseRecommendationsDto): Promise<NeteasePlaylist[]> {
     return this.sources.getNeteaseRecommendations(dto.cookie);
   }
+
+  @Post('netease/playlists')
+  @HttpCode(200)
+  getNeteasePlaylists(@Body() dto: NeteasePlaylistsDto): Promise<NeteasePlaylist[]> {
+    return this.sources.getNeteasePlaylists(dto.cookie);
+  }
+
 
   @Post('bilibili/validate-cookie')
   @HttpCode(200)
