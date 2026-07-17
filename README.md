@@ -6,122 +6,140 @@ NestJS API for Hyacine.music clients. It provides account authentication, user l
 
 ## Included
 
-- PostgreSQL-backed users, playlists, favourites, listening history, artists, albums, and tracks
+- SQLite-backed users, playlists, favourites, listening history, artists, albums, and tracks (single-container mode)
 - JWT registration, login, token refresh, logout, and current-user endpoints
-- Built-in NeteaseCloudMusicApi service for QR login, recommendations, personal playlists, and track search
-- Bilibili login-state validation and video search
+- Built-in NeteaseCloudMusicApi for QR login, recommendations, personal playlists, search, and play-url
+- Bilibili cookie validation, search, and play-url attempt
 - CORS, Helmet, DTO validation, and a health endpoint
 
-## Requirements
+## Production (recommended): one container
 
-- Node.js 20 or later
-- pnpm 11
-- PostgreSQL
+GitHub Actions builds a single image that already contains:
+
+- API
+- SQLite
 - Redis
-- Docker and Docker Compose for the bundled production deployment
+- NeteaseCloudMusicApi
 
-## Quick Start
+Image:
+
+```text
+ghcr.io/ruoxi-th/hyacine-server:latest
+```
+
+Workflow: `.github/workflows/build-image.yml`  
+After a successful build, the package is set to public automatically.
+
+### Baota / any Docker host
+
+```bash
+docker pull ghcr.io/ruoxi-th/hyacine-server:latest
+
+docker rm -f hyacine 2>/dev/null || true
+
+docker run -d \
+  --name hyacine \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  -e PORT=3000 \
+  -e DATABASE_URL=file:/data/hyacine.db \
+  -e REDIS_URL=redis://127.0.0.1:6379 \
+  -e NETEASE_API_BASE=http://127.0.0.1:3001 \
+  -e CORS_ORIGIN=* \
+  -e JWT_ACCESS_SECRET=replace_with_random_32+_chars_access \
+  -e JWT_REFRESH_SECRET=replace_with_random_32+_chars_refresh \
+  -v /www/wwwroot/hyacine-data:/data \
+  ghcr.io/ruoxi-th/hyacine-server:latest
+```
+
+Check:
+
+```bash
+docker ps
+curl -sS http://127.0.0.1:3000/api/v1/health
+```
+
+Mobile client backend URL:
+
+```text
+http://YOUR_PUBLIC_IP:3000
+```
+
+Do **not** use `127.0.0.1` / `localhost` on the phone. Open TCP `3000` in the firewall/security group.
+
+One-liner (same behaviour):
+
+```bash
+bash scripts/baota-run.sh
+```
+
+## Local development
+
+Requirements:
+
+- Node.js 20+
+- pnpm 11
+- Redis (or use single-container for everything)
 
 ```bash
 pnpm install
 cp .env.example .env
-```
-
-Set the PostgreSQL, Redis, CORS, and JWT values in `.env`. Generate a distinct random value of at least 32 characters for each JWT secret.
-
-For local development, create the database and run:
-
-```bash
+# set DATABASE_URL / REDIS_URL / CORS_ORIGIN / JWT secrets
 pnpm prisma:generate
 pnpm prisma:migrate
 pnpm start:dev
 ```
 
-The API listens on `PORT` (default `3000`) and is served below `/api/v1`. Confirm it with:
+Health:
 
 ```bash
 curl http://localhost:3000/api/v1/health
 ```
 
-For production, apply existing migrations and start the compiled application:
+## Optional: multi-service Compose
 
-```bash
-pnpm prisma:generate
-pnpm prisma:deploy
-pnpm build
-pnpm start:prod
-```
-
-## Docker Deployment
-
-Docker Compose starts the API, PostgreSQL, Redis, and a NeteaseCloudMusicApi container together. On the target host, clone this repository, create the production environment file, then start it:
+`docker-compose.yml` can still start API + Postgres + Redis + Netease as separate services. Prefer the **one-container** image above for Baota.
 
 ```bash
 cp .env.deploy.example .env
-# Edit .env with strong passwords, JWT secrets, and CORS_ORIGIN.
 docker compose up -d --build
-curl http://127.0.0.1:3000/api/v1/health
 ```
-
-The API uses the bundled `netease` service at `http://netease:3000`. Do not set `NETEASE_API_BASE` in this deployment unless intentionally replacing that internal upstream.
-
-### GitHub Actions deployment
-
-`.github/workflows/deploy.yml` is a manual `workflow_dispatch` deployment for an existing Docker host. Create a `production` GitHub environment and set these secrets:
-
-| Secret | Purpose |
-| --- | --- |
-| `DEPLOY_HOST` | Server hostname or IP. |
-| `DEPLOY_USER` | SSH user with Docker access. |
-| `DEPLOY_SSH_KEY` | Private SSH key for that user. |
-| `DEPLOY_PORT` | Optional SSH port; defaults to `22`. |
-| `DEPLOY_PATH` | Absolute path of the cloned `hyacine-server` repository. |
-
-The target directory must contain a server-local `.env` created from `.env.deploy.example`. The workflow fetches `master`, rebuilds Compose services, and verifies the health endpoint.
 
 ## Configuration
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `DATABASE_URL` | Yes | PostgreSQL Prisma connection URL. |
-| `REDIS_URL` | Yes | Redis connection URL. |
-| `PORT` | No | HTTP port. Defaults to `3000`. |
-| `CORS_ORIGIN` | Yes | Comma-separated allowed client origins. |
-| `JWT_ACCESS_SECRET` | Yes | Access-token signing secret, at least 32 characters. |
-| `JWT_REFRESH_SECRET` | Yes | Refresh-token signing secret, at least 32 characters. |
-| `JWT_ACCESS_TTL` | No | Access-token lifetime. Defaults to `15m`. |
-| `JWT_REFRESH_TTL` | No | Refresh-token lifetime. Defaults to `30d`. |
-| `NETEASE_API_BASE` | No in Compose | Optional override for a NeteaseCloudMusicApi-compatible service. Compose uses the bundled `netease` service. |
+| `DATABASE_URL` | Yes | Prisma URL. Single container uses `file:/data/hyacine.db`. |
+| `REDIS_URL` | Yes | Redis URL. Single container uses `redis://127.0.0.1:6379`. |
+| `PORT` | No | HTTP port, default `3000`. |
+| `CORS_ORIGIN` | Yes | Allowed origins; `*` is fine for mobile testing. |
+| `JWT_ACCESS_SECRET` | Yes | Access-token secret, ≥ 32 chars. |
+| `JWT_REFRESH_SECRET` | Yes | Refresh-token secret, ≥ 32 chars. |
+| `JWT_ACCESS_TTL` | No | Default `15m`. |
+| `JWT_REFRESH_TTL` | No | Default `30d`. |
+| `NETEASE_API_BASE` | Single container: yes | Upstream for Netease API, default `http://127.0.0.1:3001`. |
 
-Never commit `.env` or production secrets. Set `CORS_ORIGIN` to the exact web origins that need browser access. Mobile clients should use an address reachable from the device when configuring the server in the app.
+Never commit `.env` or production secrets.
 
-## API Surface
+## API surface
 
-All routes are prefixed with `/api/v1`.
+All routes are under `/api/v1`.
 
 | Area | Routes |
 | --- | --- |
 | Health | `GET /health` |
-| Authentication | `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout` |
+| Auth | `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout` |
 | User | `GET /users/me` |
-| Netease | `GET /music-sources/netease/qr`, `GET /music-sources/netease/qr/:key`, `POST /music-sources/netease/recommendations`, `POST /music-sources/netease/playlists`, `POST /music-sources/netease/search` |
-| Bilibili | `POST /music-sources/bilibili/validate-cookie`, `POST /music-sources/bilibili/search` |
+| Netease | `GET /music-sources/netease/qr`, `GET /music-sources/netease/qr/:key`, `POST /music-sources/netease/recommendations`, `POST /music-sources/netease/playlists`, `POST /music-sources/netease/search`, `POST /music-sources/netease/play-url` |
+| Bilibili | `POST /music-sources/bilibili/validate-cookie`, `POST /music-sources/bilibili/search`, `POST /music-sources/bilibili/play-url` |
 
-Authenticated routes require an access token. DTO validation rejects unknown request fields.
+## Music sources
 
-## Music Sources
+- **Netease**: QR login, recommendations, playlists, search, play-url (via built-in NeteaseCloudMusicApi).
+- **Bilibili**: cookie/nav validation, search, play-url attempt. Full WBI/ticket parity with NeriPlayer is not complete.
 
-### Available now
-
-- **Netease Cloud Music**: QR session creation and polling, recommendation playlists, the signed-in account's playlists, and track search. Docker Compose provides its NeteaseCloudMusicApi upstream internally.
-- **Bilibili**: validates actual authenticated login state through Bilibili's `nav` endpoint and searches public video results. It does not provide audio playback URL resolution, favourites, or playlist synchronization.
-
-Netease Cookies are sent by the client to complete individual source requests. This service does not persist them in its database.
-
-### Extending sources
-
-Music providers are isolated in `src/music-sources`. Additional providers can be added as adapters with explicit DTOs, credential handling, and response normalization. Do not represent a provider as supported until its adapter and client workflow are implemented and tested.
+Cookies for third-party sources are sent by the client per request and are not stored in the DB.
 
 ## Client
 
-The React Native client is maintained at [Hyacine.music](https://github.com/Ruoxi-TH/Hyacine-music).
+React Native client: [Hyacine.music](https://github.com/Ruoxi-TH/Hyacine-music).
