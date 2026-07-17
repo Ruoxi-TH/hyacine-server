@@ -1,32 +1,47 @@
-FROM node:20-alpine
+# syntax=docker/dockerfile:1
 
+FROM node:20-alpine AS base
 WORKDIR /app
-
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
-    CI=true
+    CI=true \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
 
-# Install build dependencies for native modules (argon2, etc.)
+FROM base AS deps
+# native build tools for argon2 etc.
 RUN apk add --no-cache python3 make g++
+COPY package.json pnpm-lock.yaml ./
+COPY prisma ./prisma
+RUN pnpm install --frozen-lockfile
+
+FROM deps AS build
+COPY nest-cli.json tsconfig.json tsconfig.build.json ./
+COPY src ./src
+RUN pnpm prisma:generate && pnpm build
+
+FROM base AS production
+ENV NODE_ENV=production
+# openssl needed by Prisma engines on alpine
+RUN apk add --no-cache openssl tini \
+  && addgroup -S hyacine \
+  && adduser -S -G hyacine hyacine
+WORKDIR /app
 
 COPY package.json pnpm-lock.yaml ./
 COPY prisma ./prisma
+# only production deps in final image
+RUN pnpm install --frozen-lockfile --prod \
+  && pnpm prisma:generate \
+  && chown -R hyacine:hyacine /app
 
-RUN corepack enable && pnpm install --frozen-lockfile
+COPY --from=build --chown=hyacine:hyacine /app/dist ./dist
 
-COPY nest-cli.json tsconfig.json tsconfig.build.json ./
-COPY src ./src
-
-RUN pnpm prisma:generate \
-  && pnpm build \
-  && pnpm prune --prod
-
-# Remove build dependencies and cleanup
-RUN apk del python3 make g++ \
-  && rm -rf /root/.local /root/.cache /tmp/* src nest-cli.json tsconfig.json tsconfig.build.json
-
-ENV NODE_ENV=production
-
+USER hyacine
 EXPOSE 3000
 
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \
+  CMD wget -qO- http://127.0.0.1:3000/api/v1/health >/dev/null 2>&1 || exit 1
+
+ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["sh", "-c", "pnpm prisma:deploy && node dist/main"]

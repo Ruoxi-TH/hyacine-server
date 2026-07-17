@@ -3,15 +3,17 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    image: hyacine-server:latest
     container_name: hyacine-api
     restart: unless-stopped
     env_file:
       - .env
     environment:
+      NODE_ENV: production
+      PORT: 3000
       DATABASE_URL: postgresql://hyacine:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/hyacine?schema=public
       REDIS_URL: redis://redis:6379
       NETEASE_API_BASE: http://netease:3000
-      PORT: 3000
     ports:
       - "${API_PORT:-3000}:3000"
     depends_on:
@@ -21,6 +23,12 @@ services:
         condition: service_healthy
       netease:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
 
   netease:
     image: binaryify/netease_cloud_music_api:latest
@@ -40,7 +48,7 @@ services:
       POSTGRES_USER: hyacine
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -53,8 +61,9 @@ services:
     image: redis:7-alpine
     container_name: hyacine-redis
     restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
