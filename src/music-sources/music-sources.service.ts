@@ -6,7 +6,7 @@ import { createHash, randomUUID } from 'node:crypto';
 interface NeteaseQrResponse { data?: { unikey?: string; qrurl?: string }; code?: number; }
 interface NeteaseStatusResponse { code?: number; cookie?: string; message?: string; }
 interface NeteaseRecommendResponse { recommend?: Array<{ id?: number; name?: string; picUrl?: string; playcount?: number; trackCount?: number; copywriter?: string }>; code?: number; }
-interface NeteaseAccountResponse { account?: { id?: number }; profile?: { userId?: number }; code?: number; }
+interface NeteaseAccountResponse { account?: { id?: number }; profile?: { userId?: number; nickname?: string; avatarUrl?: string }; code?: number; }
 interface NeteaseUserPlaylistsResponse { playlist?: Array<{ id?: number; name?: string; coverImgUrl?: string; playCount?: number; trackCount?: number; description?: string }>; code?: number; }
 interface NeteaseSearchResponse { result?: { songs?: Array<{ id?: number; name?: string; artists?: Array<{ name?: string }>; ar?: Array<{ name?: string }>; album?: { name?: string; picUrl?: string }; al?: { name?: string; picUrl?: string }; duration?: number; dt?: number }> }; code?: number; }
 interface NeteasePlayUrlResponse { data?: Array<{ id?: number; url?: string; br?: number; size?: number; md5?: string; code?: number }>; code?: number; }
@@ -46,6 +46,18 @@ export class MusicSourcesService {
     return { status: 'pending', message: result.message };
   }
 
+  async getNeteaseProfile(cookie: string): Promise<{ userId: number; nickname: string; avatarUrl: string }> {
+    const base = this.neteaseBaseUrl();
+    const account = await this.request<NeteaseAccountResponse>(base, `/user/account?timestamp=${Date.now()}`, cookie);
+    const userId = account.profile?.userId ?? account.account?.id;
+    if (!userId) throw new ServiceUnavailableException('Netease account is unavailable');
+    return {
+      userId,
+      nickname: account.profile?.nickname?.trim() || '',
+      avatarUrl: this.normalizeNeteaseCover(account.profile?.avatarUrl),
+    };
+  }
+
   async getNeteaseRecommendations(cookie: string): Promise<NeteasePlaylist[]> {
     const result = await this.request<NeteaseRecommendResponse>(this.neteaseBaseUrl(), `/recommend/resource?timestamp=${Date.now()}`, cookie);
     return (result.recommend ?? []).flatMap((item) => item.id && item.name && item.picUrl ? [{
@@ -75,7 +87,7 @@ export class MusicSourcesService {
     const base = this.neteaseBaseUrl();
     const userId = await this.getNeteaseUserId(base, cookie);
     const result = await this.request<NeteaseUserPlaylistsResponse>(base, `/user/playlist?uid=${encodeURIComponent(String(userId))}&timestamp=${Date.now()}`, cookie);
-    return (result.playlist ?? []).flatMap((item) => item.id && item.name && item.coverImgUrl ? [{
+    return (result.playlist ?? []).flatMap((item) => item.id && item.name ? [{
       id: item.id,
       name: item.name,
       coverUrl: this.normalizeNeteaseCover(item.coverImgUrl),

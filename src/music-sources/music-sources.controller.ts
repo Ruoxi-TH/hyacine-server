@@ -25,6 +25,12 @@ export class MusicSourcesController {
     return this.sources.pollNeteaseQr(key);
   }
 
+  @Post('netease/profile')
+  @HttpCode(200)
+  getNeteaseProfile(@Body() dto: NeteaseRecommendationsDto): Promise<{ userId: number; nickname: string; avatarUrl: string }> {
+    return this.sources.getNeteaseProfile(dto.cookie);
+  }
+
   @Post('netease/recommendations')
   @HttpCode(200)
   getNeteaseRecommendations(@Body() dto: NeteaseRecommendationsDto): Promise<NeteasePlaylist[]> {
