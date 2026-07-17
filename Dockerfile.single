@@ -1,0 +1,60 @@
+# 单容器：API + SQLite + Redis + Netease
+ARG NODE_IMAGE=node:20-alpine
+FROM ${NODE_IMAGE} AS base
+WORKDIR /app
+ENV PNPM_HOME=/pnpm \
+    PATH=/pnpm:$PATH \
+    CI=true \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
+
+FROM base AS deps
+RUN apk add --no-cache python3 make g++
+COPY package.json pnpm-lock.yaml ./
+COPY prisma ./prisma
+RUN pnpm install --frozen-lockfile
+
+FROM deps AS build
+COPY nest-cli.json tsconfig.json tsconfig.build.json ./
+COPY src ./src
+RUN pnpm prisma:generate && pnpm build
+
+FROM base AS production
+ENV NODE_ENV=production \
+    PORT=3000 \
+    DATABASE_URL=file:/data/hyacine.db \
+    REDIS_URL=redis://127.0.0.1:6379 \
+    NETEASE_API_BASE=http://127.0.0.1:3001 \
+    CORS_ORIGIN=* \
+    JWT_ACCESS_TTL=15m \
+    JWT_REFRESH_TTL=30d
+
+RUN apk add --no-cache openssl tini redis supervisor curl \
+  && addgroup -S hyacine \
+  && adduser -S -G hyacine hyacine \
+  && mkdir -p /data /var/log/supervisor /etc/supervisor.d \
+  && chown -R hyacine:hyacine /data
+
+WORKDIR /app
+COPY package.json pnpm-lock.yaml ./
+COPY prisma ./prisma
+RUN pnpm install --frozen-lockfile --prod \
+  && pnpm prisma:generate \
+  && chown -R hyacine:hyacine /app
+
+COPY --from=build --chown=hyacine:hyacine /app/dist ./dist
+COPY --chown=root:root docker/single/supervisord.conf /etc/supervisord.conf
+COPY --chown=root:root docker/single/start-api.sh /usr/local/bin/start-api.sh
+COPY --chown=root:root docker/single/start-netease.sh /usr/local/bin/start-netease.sh
+RUN chmod +x /usr/local/bin/start-api.sh /usr/local/bin/start-netease.sh
+
+# 内置 NeteaseCloudMusicApi
+RUN npm install -g NeteaseCloudMusicApi@latest || npm install -g NeteaseCloudMusicApi
+
+VOLUME ["/data"]
+EXPOSE 3000
+HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=8 \
+  CMD wget -qO- http://127.0.0.1:3000/api/v1/health >/dev/null 2>&1 || exit 1
+
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
