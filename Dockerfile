@@ -1,29 +1,28 @@
-FROM node:20-bookworm-slim
+FROM node:20-alpine
 
 WORKDIR /app
 
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
-    CI=true \
-    NODE_OPTIONS=--max-old-space-size=512
+    CI=true
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
-  && rm -rf /var/lib/apt/lists/* \
-  && npm install -g pnpm@10.15.0
+# Install build dependencies for native modules (argon2, etc.)
+RUN apk add --no-cache python3 make g++
 
 COPY package.json pnpm-lock.yaml ./
 COPY prisma ./prisma
 
-# Install all deps (including build tools), then prune for production.
-RUN pnpm install --frozen-lockfile
+RUN corepack enable && pnpm install --frozen-lockfile
 
 COPY nest-cli.json tsconfig.json tsconfig.build.json ./
 COPY src ./src
 
 RUN pnpm prisma:generate \
   && pnpm build \
-  && pnpm prune --prod \
+  && pnpm prune --prod
+
+# Remove build dependencies and cleanup
+RUN apk del python3 make g++ \
   && rm -rf /root/.local /root/.cache /tmp/* src nest-cli.json tsconfig.json tsconfig.build.json
 
 ENV NODE_ENV=production
