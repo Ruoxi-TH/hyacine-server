@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# 宝塔一键：单容器部署（1 个容器包含 API+DB+Redis+网易云）
+# 宝塔一键：GitHub 已构建好的单容器镜像，直接 pull + run
 # 用法：
-#   HYACINE_REEXEC=1 SKIP_GIT=1 bash scripts/baota-run.sh
-#   nohup env HYACINE_REEXEC=1 SKIP_GIT=1 bash scripts/baota-run.sh > /tmp/hyacine-deploy.log 2>&1 &
+#   curl -fsSL "https://raw.githubusercontent.com/Ruoxi-TH/hyacine-server/master/scripts/baota-run.sh?v=6" | bash
+# 或本机：
+#   bash scripts/baota-run.sh
 
 set -u
 
-SCRIPT_VERSION="2026-07-17-v5.1-single"
-REPO_URL="${REPO_URL:-https://github.com/Ruoxi-TH/hyacine-server.git}"
-INSTALL_DIR="${INSTALL_DIR:-/www/wwwroot/hyacine-server}"
+SCRIPT_VERSION="2026-07-17-v6-ghcr"
 API_PORT="${API_PORT:-3000}"
 NAME="${NAME:-hyacine}"
 DATA_DIR="${DATA_DIR:-/www/wwwroot/hyacine-data}"
-MIRRORS="${MIRRORS:-docker.1ms.run docker.m.daocloud.io dockerproxy.com}"
-SKIP_GIT="${SKIP_GIT:-0}"
-GIT_TIMEOUT="${GIT_TIMEOUT:-20}"
+IMAGE="${IMAGE:-ghcr.io/ruoxi-th/hyacine-server:latest}"
+
+# 国内拉 GHCR 可能慢，可改：
+# IMAGE=ghcr.io/ruoxi-th/hyacine-server:latest
 
 log(){ printf '[hyacine] %s\n' "$*"; }
 fail(){ printf '[hyacine] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -32,93 +32,33 @@ need_docker(){
   docker info >/dev/null 2>&1 || fail "Docker 未启动"
 }
 
-run_with_timeout(){
-  local sec="$1"; shift
-  if command -v timeout >/dev/null 2>&1; then
-    timeout "$sec" "$@"
-  else
-    "$@"
+pull_image(){
+  log "pull image: $IMAGE"
+  if docker pull "$IMAGE"; then
+    return 0
   fi
-}
-
-prepare_repo(){
-  mkdir -p "$(dirname "$INSTALL_DIR")" "$DATA_DIR"
-
-  if [[ "$SKIP_GIT" == "1" ]]; then
-    log "skip git (SKIP_GIT=1)"
-    [[ -d "$INSTALL_DIR" ]] || fail "目录不存在: $INSTALL_DIR"
-    cd "$INSTALL_DIR" || fail "无法进入 $INSTALL_DIR"
-    return
-  fi
-
-  if [[ -d "$INSTALL_DIR/.git" ]]; then
-    log "update repo (timeout ${GIT_TIMEOUT}s): $INSTALL_DIR"
-    run_with_timeout "$GIT_TIMEOUT" git -C "$INSTALL_DIR" fetch --all --prune || log "git fetch skip/timeout"
-    run_with_timeout "$GIT_TIMEOUT" git -C "$INSTALL_DIR" reset --hard origin/master || log "git reset skip"
-  else
-    command -v git >/dev/null 2>&1 || fail "缺少 git"
-    rm -rf "$INSTALL_DIR"
-    log "clone $REPO_URL -> $INSTALL_DIR"
-    if ! run_with_timeout 180 git clone "$REPO_URL" "$INSTALL_DIR"; then
-      log "clone fail, try proxy"
-      run_with_timeout 180 git clone "https://ghproxy.net/https://github.com/Ruoxi-TH/hyacine-server.git" "$INSTALL_DIR" \
-        || fail "git clone 失败"
-    fi
-  fi
-  cd "$INSTALL_DIR" || fail "无法进入 $INSTALL_DIR"
-}
-
-maybe_reexec(){
-  if [[ "${HYACINE_REEXEC:-0}" == "1" ]]; then
-    return
-  fi
-  prepare_repo
-  if [[ -f "$INSTALL_DIR/scripts/baota-run.sh" ]]; then
-    log "re-exec local $SCRIPT_VERSION"
-    export HYACINE_REEXEC=1
-    export API_PORT INSTALL_DIR REPO_URL DATA_DIR NAME MIRRORS SKIP_GIT GIT_TIMEOUT
-    exec bash "$INSTALL_DIR/scripts/baota-run.sh"
-  fi
-}
-
-pick_node_image(){
-  local m
-  for m in $MIRRORS; do
-    log "try node image: $m/library/node:20-alpine"
-    if docker pull "$m/library/node:20-alpine" >/tmp/hyacine-pull.log 2>&1; then
-      NODE_IMAGE="$m/library/node:20-alpine"
-      log "node ok: $NODE_IMAGE"
+  # 常见代理前缀兜底（若可用）
+  local proxies=(
+    ""
+    "docker.1ms.run/"
+    "docker.m.daocloud.io/"
+  )
+  local p
+  for p in "${proxies[@]}"; do
+    [[ -z "$p" ]] && continue
+    log "try proxy pull: ${p}${IMAGE#https://}"
+    if docker pull "${p}${IMAGE}"; then
+      IMAGE="${p}${IMAGE}"
       return 0
     fi
   done
-  if docker pull node:20-alpine >/tmp/hyacine-pull.log 2>&1; then
-    NODE_IMAGE="node:20-alpine"
-    log "node ok: $NODE_IMAGE"
-    return 0
-  fi
-  cat /tmp/hyacine-pull.log || true
-  fail "node 镜像拉取失败"
+  fail "镜像拉取失败。请确认 GitHub Actions 已构建成功，且仓库包为 Public，或本机可访问 ghcr.io"
 }
 
 cleanup_old(){
-  for c in hyacine-api hyacine-netease hyacine-postgres hyacine-redis "$NAME"; do
+  for c in hyacine hyacine-api hyacine-netease hyacine-postgres hyacine-redis; do
     docker rm -f "$c" >/dev/null 2>&1 || true
   done
-  if [[ -f "$INSTALL_DIR/docker-compose.yml" ]]; then
-    (cd "$INSTALL_DIR" && docker compose down >/dev/null 2>&1) || true
-  fi
-}
-
-build_single(){
-  [[ -f "$INSTALL_DIR/Dockerfile.single" ]] || fail "缺少 Dockerfile.single"
-  [[ -f "$INSTALL_DIR/tsconfig.build.json" ]] || fail "缺少 tsconfig.build.json，请先更新代码"
-  log "build single image..."
-  docker build \
-    -f "$INSTALL_DIR/Dockerfile.single" \
-    --build-arg "NODE_IMAGE=$NODE_IMAGE" \
-    -t hyacine-single:latest \
-    "$INSTALL_DIR" \
-    || fail "单容器镜像构建失败"
 }
 
 run_single(){
@@ -127,6 +67,7 @@ run_single(){
   refresh="$(random_secret)"
   mkdir -p "$DATA_DIR"
 
+  log "run ONE container: $NAME"
   docker run -d \
     --name "$NAME" \
     --restart unless-stopped \
@@ -141,23 +82,13 @@ run_single(){
     -e JWT_ACCESS_TTL=15m \
     -e JWT_REFRESH_TTL=30d \
     -v "$DATA_DIR:/data" \
-    hyacine-single:latest \
-    || fail "单容器启动失败"
-
-  cat > "$INSTALL_DIR/.env.runtime" <<EOF
-API_PORT=${API_PORT}
-JWT_ACCESS_SECRET=${access}
-JWT_REFRESH_SECRET=${refresh}
-DATA_DIR=${DATA_DIR}
-CONTAINER=${NAME}
-MODE=single
-EOF
-  chmod 600 "$INSTALL_DIR/.env.runtime" || true
+    "$IMAGE" \
+    || fail "容器启动失败"
 }
 
 wait_health(){
   local i
-  for ((i=1;i<=90;i++)); do
+  for ((i=1;i<=60;i++)); do
     if curl -fsS "http://127.0.0.1:${API_PORT}/api/v1/health" >/dev/null 2>&1; then
       log "health ok"
       return 0
@@ -165,18 +96,15 @@ wait_health(){
     sleep 2
   done
   log "health timeout"
-  docker logs --tail 120 "$NAME" || true
+  docker logs --tail 80 "$NAME" || true
   return 1
 }
 
 main(){
-  log "script $SCRIPT_VERSION (ONE container)"
+  log "script $SCRIPT_VERSION (pull prebuilt image, ONE container)"
   need_docker
-  maybe_reexec
-  prepare_repo
-  pick_node_image
+  pull_image
   cleanup_old
-  build_single
   run_single
   wait_health || true
 
@@ -187,9 +115,7 @@ main(){
   log "done - 只有 1 个容器"
   docker ps --filter "name=^/${NAME}$" || docker ps --filter "name=${NAME}"
   log "API: http://${ip}:${API_PORT}"
-  log "health: http://${ip}:${API_PORT}/api/v1/health"
   log "手机端填: http://${ip}:${API_PORT}"
-  log "log: /tmp/hyacine-deploy.log"
 }
 
 main "$@"
