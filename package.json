@@ -18,7 +18,13 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "deploy:docker": "bash scripts/deploy-docker.sh",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f api",
+    "docker:ps": "docker compose ps",
+    "docker:health": "curl -fsS http://127.0.0.1:${API_PORT:-3000}/api/v1/health"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.6",
