@@ -60,7 +60,7 @@ export class MusicSourcesController {
 
   @Post('bilibili/play-url')
   @HttpCode(200)
-  getBilibiliPlayUrl(@Body() dto: BilibiliPlayUrlDto): Promise<{ url: string; quality: string }> {
-    return this.sources.getBilibiliPlayUrl(dto.id, dto.cid ?? '', dto.cookie);
+  getBilibiliPlayUrl(@Body() dto: BilibiliPlayUrlDto): Promise<{ url: string; quality: string; cid: string }> {
+    return this.sources.getBilibiliPlayUrl(dto.id, dto.cid, dto.cookie);
   }
 }

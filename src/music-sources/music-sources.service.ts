@@ -127,34 +127,49 @@ export class MusicSourcesService {
     }] : []);
   }
 
-  async getBilibiliPlayUrl(id: string, cid: string, cookie?: string): Promise<{ url: string; quality: string }> {
+  async getBilibiliPlayUrl(id: string, cid?: string, cookie?: string): Promise<{ url: string; quality: string; cid: string }> {
+    const bvid = id.trim();
+    if (!bvid) throw new ServiceUnavailableException('Bilibili bvid is required');
+    const resolvedCid = (cid ?? '').trim() || await this.resolveBilibiliCid(bvid, cookie);
+    if (!resolvedCid) throw new ServiceUnavailableException('Failed to resolve Bilibili cid');
+
     const query = new URLSearchParams({
-      bvid: id,
-      cid: cid,
-      qn: '64',
+      bvid,
+      cid: resolvedCid,
+      qn: '80',
       fnval: '16',
-      type: 'json',
+      fourk: '1',
     });
     const result = await this.bilibiliRequest<BilibiliPlayUrlResponse>(`/x/player/playurl?${query.toString()}`, cookie);
-    
     if (result.code !== 0) {
       throw new ServiceUnavailableException(`Bilibili playurl failed: code ${result.code}`);
     }
 
-    const dash = result.data?.dash?.audio;
-    if (dash && dash.length > 0) {
-      const audio = dash.sort((a, b) => (a.id ?? 0) - (b.id ?? 0))[0];
-      return { url: audio?.baseUrl ?? '', quality: `dash_${audio?.id ?? 0}` };
+    const dash = result.data?.dash?.audio ?? [];
+    if (dash.length > 0) {
+      const audio = [...dash].sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0];
+      const url = audio?.baseUrl || audio?.backupUrl?.[0] || '';
+      if (url) return { url, quality: `dash_${audio?.id ?? 0}`, cid: resolvedCid };
     }
 
     const durl = result.data?.durl?.[0];
     if (durl?.url) {
-      return { url: durl.url, quality: 'durl' };
+      return { url: durl.url, quality: 'durl', cid: resolvedCid };
     }
-
     throw new ServiceUnavailableException('No playable stream found for Bilibili video');
   }
 
+  private async resolveBilibiliCid(bvid: string, cookie?: string): Promise<string> {
+    const result = await this.bilibiliRequest<{
+      code?: number;
+      data?: { cid?: number; pages?: Array<{ cid?: number }> };
+    }>(`/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`, cookie);
+    if (result.code !== 0) {
+      throw new ServiceUnavailableException(`Bilibili view failed: code ${result.code}`);
+    }
+    const value = result.data?.cid ?? result.data?.pages?.[0]?.cid;
+    return value ? String(value) : '';
+  }
   private neteaseBaseUrl(): string {
     const value = this.config.get<string>('NETEASE_API_BASE');
     if (!value) throw new ServiceUnavailableException('NETEASE_API_BASE is not configured');
@@ -167,7 +182,7 @@ export class MusicSourcesService {
         headers: {
           Accept: 'application/json',
           Referer: 'https://www.bilibili.com/',
-          'User-Agent': 'HyacineServer/1.0',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
           ...(cookie ? { Cookie: cookie } : {}),
         },
         signal: AbortSignal.timeout(10_000),
