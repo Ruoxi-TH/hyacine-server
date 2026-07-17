@@ -21,7 +21,22 @@ fi
 mkdir -p /data
 chown -R hyacine:hyacine /data /app || true
 
-# sqlite 直接用 db push，避免无 migrations
+# 等 redis 就绪
+i=0
+while [ "$i" -lt 30 ]; do
+  if redis-cli -h 127.0.0.1 -p 6379 ping 2>/dev/null | grep -q PONG; then
+    break
+  fi
+  i=$((i + 1))
+  sleep 1
+done
+
 cd /app
-su -s /bin/sh hyacine -c "pnpm exec prisma db push --skip-generate"
+# 没有 migrations 时用 db push
+if [ -d prisma/migrations ] && [ "$(ls -A prisma/migrations 2>/dev/null || true)" ]; then
+  su -s /bin/sh hyacine -c "pnpm exec prisma migrate deploy"
+else
+  su -s /bin/sh hyacine -c "pnpm exec prisma db push --skip-generate"
+fi
+
 exec su -s /bin/sh hyacine -c "node dist/main"

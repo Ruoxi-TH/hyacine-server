@@ -16,4 +16,5 @@ npm-debug.log*
 pnpm-debug.log*
 docker-compose*.yml
 render.yaml
-Dockerfile*
+dev.db
+prisma/dev.db

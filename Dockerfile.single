@@ -29,7 +29,7 @@ ENV NODE_ENV=production \
     JWT_ACCESS_TTL=15m \
     JWT_REFRESH_TTL=30d
 
-RUN apk add --no-cache openssl tini redis supervisor curl \
+RUN apk add --no-cache openssl tini redis supervisor curl wget \
   && addgroup -S hyacine \
   && adduser -S -G hyacine hyacine \
   && mkdir -p /data /var/log/supervisor /etc/supervisor.d \
@@ -38,14 +38,17 @@ RUN apk add --no-cache openssl tini redis supervisor curl \
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 COPY prisma ./prisma
-RUN pnpm install --frozen-lockfile --prod \
+# 生产阶段需要 prisma CLI 做 db push，不能只用 --prod
+RUN pnpm install --frozen-lockfile \
   && pnpm prisma:generate \
+  && pnpm prune --prod \
+  && pnpm add -D prisma \
   && chown -R hyacine:hyacine /app
 
 COPY --from=build --chown=hyacine:hyacine /app/dist ./dist
-COPY --chown=root:root docker/single/supervisord.conf /etc/supervisord.conf
-COPY --chown=root:root docker/single/start-api.sh /usr/local/bin/start-api.sh
-COPY --chown=root:root docker/single/start-netease.sh /usr/local/bin/start-netease.sh
+COPY docker/single/supervisord.conf /etc/supervisord.conf
+COPY docker/single/start-api.sh /usr/local/bin/start-api.sh
+COPY docker/single/start-netease.sh /usr/local/bin/start-netease.sh
 RUN chmod +x /usr/local/bin/start-api.sh /usr/local/bin/start-netease.sh
 
 # 内置 NeteaseCloudMusicApi
