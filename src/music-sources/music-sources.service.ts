@@ -51,7 +51,7 @@ export class MusicSourcesService {
     return (result.recommend ?? []).flatMap((item) => item.id && item.name && item.picUrl ? [{
       id: item.id,
       name: item.name,
-      coverUrl: item.picUrl,
+      coverUrl: this.normalizeNeteaseCover(item.picUrl),
       playCount: item.playcount ?? 0,
       trackCount: item.trackCount ?? 0,
       description: item.copywriter ?? '',
@@ -65,7 +65,7 @@ export class MusicSourcesService {
       title: song.name,
       artists: (song.ar ?? []).flatMap((artist) => artist.name ? [artist.name] : []),
       album: '',
-      coverUrl: song.al?.picUrl ?? '',
+      coverUrl: this.normalizeNeteaseCover(song.al?.picUrl),
       durationMs: song.dt ?? 0,
       source: 'netease' as const,
     }] : []);
@@ -78,7 +78,7 @@ export class MusicSourcesService {
     return (result.playlist ?? []).flatMap((item) => item.id && item.name && item.coverImgUrl ? [{
       id: item.id,
       name: item.name,
-      coverUrl: item.coverImgUrl,
+      coverUrl: this.normalizeNeteaseCover(item.coverImgUrl),
       playCount: item.playCount ?? 0,
       trackCount: item.trackCount ?? 0,
       description: item.description ?? '',
@@ -96,7 +96,7 @@ export class MusicSourcesService {
     return {
       id: playlist.id,
       name: playlist.name,
-      coverUrl: playlist.coverImgUrl ?? '',
+      coverUrl: this.normalizeNeteaseCover(playlist.coverImgUrl),
       playCount: playlist.playCount ?? 0,
       trackCount: playlist.trackCount ?? 0,
       description: playlist.description ?? '',
@@ -111,7 +111,7 @@ export class MusicSourcesService {
       title: song.name,
       artists: (song.ar ?? song.artists ?? []).flatMap((artist) => artist.name ? [artist.name] : []),
       album: (song.al ?? song.album)?.name ?? '',
-      coverUrl: (song.al ?? song.album)?.picUrl ?? '',
+      coverUrl: this.normalizeNeteaseCover((song.al ?? song.album)?.picUrl),
       durationMs: song.dt ?? song.duration ?? 0,
       source: 'netease' as const,
     }] : []);
@@ -233,6 +233,17 @@ export class MusicSourcesService {
     const value = result.data?.cid ?? result.data?.pages?.[0]?.cid;
     return value ? String(value) : '';
   }
+  private normalizeNeteaseCover(url?: string | null): string {
+    if (!url) return '';
+    const value = url.trim();
+    if (!value) return '';
+    const absolute = value.startsWith('//') ? `https:${value}` : value;
+    if (!/^https?:\/\//i.test(absolute)) return absolute;
+    // Prefer a fixed thumbnail size so clients always receive a loadable image URL.
+    if (absolute.includes('param=')) return absolute;
+    return absolute.includes('?') ? `${absolute}&param=400y400` : `${absolute}?param=400y400`;
+  }
+
   private createNeteaseStream(url: string, br: number, cookie?: string): { url: string; br: number } {
     const token = randomUUID();
     this.neteaseStreams.set(token, { url, cookie, expiresAt: Date.now() + 15 * 60_000 });
