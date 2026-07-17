@@ -1,25 +1,33 @@
-FROM node:20-bookworm-slim AS base
+FROM node:20-bookworm-slim
+
 WORKDIR /app
-RUN corepack enable
 
-FROM base AS dependencies
+ENV PNPM_HOME=/pnpm \
+    PATH=/pnpm:$PATH \
+    CI=true \
+    NODE_OPTIONS=--max-old-space-size=512
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && npm install -g pnpm@10.15.0
+
 COPY package.json pnpm-lock.yaml ./
-RUN corepack pnpm install --frozen-lockfile
-
-FROM dependencies AS build
 COPY prisma ./prisma
-COPY src ./src
+
+# Install all deps (including build tools), then prune for production.
+RUN pnpm install --frozen-lockfile
+
 COPY nest-cli.json tsconfig.json tsconfig.build.json ./
-RUN corepack pnpm prisma:generate && corepack pnpm build
+COPY src ./src
 
-FROM node:20-bookworm-slim AS production
-WORKDIR /app
+RUN pnpm prisma:generate \
+  && pnpm build \
+  && pnpm prune --prod \
+  && rm -rf /root/.local /root/.cache /tmp/* src nest-cli.json tsconfig.json tsconfig.build.json
+
 ENV NODE_ENV=production
-RUN corepack enable
-COPY package.json pnpm-lock.yaml ./
-RUN corepack pnpm install --frozen-lockfile
-COPY prisma ./prisma
-COPY --from=build /app/dist ./dist
-RUN corepack pnpm prisma:generate
+
 EXPOSE 3000
-CMD ["sh", "-c", "corepack pnpm prisma:deploy && node dist/main"]
+
+CMD ["sh", "-c", "pnpm prisma:deploy && node dist/main"]
