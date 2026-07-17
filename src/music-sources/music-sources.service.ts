@@ -1,5 +1,6 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHash } from 'node:crypto';
 
 // Interfaces for Netease API responses
 interface NeteaseQrResponse { data?: { unikey?: string; qrurl?: string }; code?: number; }
@@ -7,11 +8,11 @@ interface NeteaseStatusResponse { code?: number; cookie?: string; message?: stri
 interface NeteaseRecommendResponse { recommend?: Array<{ id?: number; name?: string; picUrl?: string; playcount?: number; trackCount?: number; copywriter?: string }>; code?: number; }
 interface NeteaseAccountResponse { account?: { id?: number }; profile?: { userId?: number }; code?: number; }
 interface NeteaseUserPlaylistsResponse { playlist?: Array<{ id?: number; name?: string; coverImgUrl?: string; playCount?: number; trackCount?: number; description?: string }>; code?: number; }
-interface NeteaseSearchResponse { result?: { songs?: Array<{ id?: number; name?: string; artists?: Array<{ name?: string }>; album?: { name?: string; picUrl?: string }; duration?: number; url?: string; br?: number }> }; code?: number; }
+interface NeteaseSearchResponse { result?: { songs?: Array<{ id?: number; name?: string; artists?: Array<{ name?: string }>; ar?: Array<{ name?: string }>; album?: { name?: string; picUrl?: string }; al?: { name?: string; picUrl?: string }; duration?: number; dt?: number }> }; code?: number; }
 interface NeteasePlayUrlResponse { data?: Array<{ id?: number; url?: string; br?: number; size?: number; md5?: string; code?: number }>; code?: number; }
 
 // Interfaces for Bilibili API responses
-interface BilibiliNavResponse { code?: number; data?: { isLogin?: boolean }; }
+interface BilibiliNavResponse { code?: number; data?: { isLogin?: boolean; wbi_img?: { img_url?: string; sub_url?: string } }; }
 interface BilibiliSearchResponse { code?: number; data?: { result?: Array<{ bvid?: string; title?: string; author?: string; pic?: string; duration?: string }> }; }
 interface BilibiliPlayUrlResponse { code?: number; data?: { durl?: Array<{ url?: string; size?: number; length?: number }>; dash?: { audio?: Array<{ id?: number; baseUrl?: string; backupUrl?: string[] }> } }; }
 
@@ -75,22 +76,22 @@ export class MusicSourcesService {
     return (result.result?.songs ?? []).flatMap((song) => song.id && song.name ? [{
       id: song.id,
       title: song.name,
-      artists: (song.artists ?? []).flatMap((artist) => artist.name ? [artist.name] : []),
-      album: song.album?.name ?? '',
-      coverUrl: song.album?.picUrl ?? '',
-      durationMs: song.duration ?? 0,
+      artists: (song.ar ?? song.artists ?? []).flatMap((artist) => artist.name ? [artist.name] : []),
+      album: (song.al ?? song.album)?.name ?? '',
+      coverUrl: (song.al ?? song.album)?.picUrl ?? '',
+      durationMs: song.dt ?? song.duration ?? 0,
       source: 'netease' as const,
     }] : []);
   }
 
   async getNeteasePlayUrl(id: number, level = 'exhigh', cookie?: string): Promise<{ url: string; br: number }> {
     const base = this.neteaseBaseUrl();
-    // Try v1 endpoint first (supports level)
-    const query = new URLSearchParams({ id: String(id), level, timestamp: String(Date.now()) });
-    const result = await this.request<NeteasePlayUrlResponse>(base, `/song/url/v1?${query.toString()}`, cookie);
-    const data = result.data?.[0];
-    if (data?.url && data.code === 200) {
-      return { url: data.url, br: data.br ?? 0 };
+    const levels = [...new Set([level, 'exhigh', 'higher', 'standard'])];
+    for (const candidate of levels) {
+      const query = new URLSearchParams({ id: String(id), level: candidate, timestamp: String(Date.now()) });
+      const result = await this.request<NeteasePlayUrlResponse>(base, `/song/url/v1?${query.toString()}`, cookie);
+      const data = result.data?.[0];
+      if (data?.url && data.code === 200) return { url: data.url, br: data.br ?? 0 };
     }
     // Fallback to old endpoint
     const fallbackQuery = new URLSearchParams({ id: String(id), timestamp: String(Date.now()) });
@@ -114,8 +115,10 @@ export class MusicSourcesService {
   }
 
   async searchBilibili(keywords: string, limit = 20, cookie?: string): Promise<BilibiliTrack[]> {
-    const query = new URLSearchParams({ keyword: keywords.trim(), search_type: 'video', page: '1', page_size: String(limit) });
-    const result = await this.bilibiliRequest<BilibiliSearchResponse>(`/x/web-interface/search/type?${query.toString()}`, cookie);
+    const path = await this.signedBilibiliPath('/x/web-interface/wbi/search/type', {
+      keyword: keywords.trim(), search_type: 'video', page: '1', page_size: String(limit),
+    }, cookie);
+    const result = await this.bilibiliRequest<BilibiliSearchResponse>(path, cookie);
     if (result.code !== 0) throw new ServiceUnavailableException('Bilibili search is unavailable');
     return (result.data?.result ?? []).flatMap((item) => item.bvid && item.title ? [{
       id: item.bvid,
@@ -174,6 +177,23 @@ export class MusicSourcesService {
     const value = this.config.get<string>('NETEASE_API_BASE');
     if (!value) throw new ServiceUnavailableException('NETEASE_API_BASE is not configured');
     return value.replace(/\/$/, '');
+  }
+
+  private async signedBilibiliPath(path: string, params: Record<string, string>, cookie?: string): Promise<string> {
+    const nav = await this.bilibiliRequest<BilibiliNavResponse>('/x/web-interface/nav', cookie);
+    const img = nav.data?.wbi_img?.img_url?.split('/').pop()?.split('.')[0] ?? '';
+    const sub = nav.data?.wbi_img?.sub_url?.split('/').pop()?.split('.')[0] ?? '';
+    if (!img || !sub) throw new ServiceUnavailableException('Bilibili WBI key is unavailable');
+    const table = [46,47,18,2,53,8,23,32,15,50,10,31,58,3,45,35,27,43,5,49,33,9,42,19,29,28,14,39,12,38,41,13,37,48,7,16,24,55,40,61,26,17,0,1,60,51,30,4,22,25,54,21,56,59,6,63,57,62,11,36,20,34,44,52];
+    const source = img + sub;
+    const mixin = table.map((index) => source[index] ?? '').join('').slice(0, 32);
+    const signed = new URLSearchParams({ ...params, wts: String(Math.floor(Date.now() / 1000)) });
+    const ordered = [...signed.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value.replace(/[!'()*]/g, ''))}`)
+      .join('&');
+    const rid = createHash('md5').update(ordered + mixin).digest('hex');
+    return `${path}?${ordered}&w_rid=${rid}`;
   }
 
   private async bilibiliRequest<T>(path: string, cookie?: string): Promise<T> {
