@@ -13,7 +13,7 @@ interface NeteasePlayUrlResponse { data?: Array<{ id?: number; url?: string; br?
 
 // Interfaces for Bilibili API responses
 interface BilibiliNavResponse { code?: number; data?: { isLogin?: boolean; wbi_img?: { img_url?: string; sub_url?: string } }; }
-interface BilibiliSearchResponse { code?: number; data?: { result?: Array<{ bvid?: string; title?: string; author?: string; pic?: string; duration?: string }> }; }
+interface BilibiliSearchResponse { code?: number; data?: { result?: Array<{ bvid?: string; title?: string; author?: string; pic?: string; duration?: string; type?: string; typename?: string }> }; }
 interface BilibiliPlayUrlResponse { code?: number; data?: { durl?: Array<{ url?: string; size?: number; length?: number }>; dash?: { audio?: Array<{ id?: number; baseUrl?: string; backupUrl?: string[] }> } }; }
 
 export interface NeteasePlaylist { id: number; name: string; coverUrl: string; playCount: number; trackCount: number; description: string; }
@@ -115,22 +115,34 @@ export class MusicSourcesService {
   }
 
   async searchBilibili(keywords: string, limit = 20, cookie?: string): Promise<BilibiliTrack[]> {
+    if (!cookie?.includes('SESSDATA=')) {
+      throw new ServiceUnavailableException('请先在音乐源页绑定有效的哔哩哔哩账号');
+    }
     const path = await this.signedBilibiliPath('/x/web-interface/wbi/search/type', {
-      keyword: keywords.trim(), search_type: 'video', page: '1', page_size: String(limit),
+      keyword: keywords.trim(),
+      search_type: 'video',
+      page: '1',
+      page_size: String(Math.min(limit, 20)),
+      tids: '3',
     }, cookie);
     const result = await this.bilibiliRequest<BilibiliSearchResponse>(path, cookie);
     if (result.code !== 0) throw new ServiceUnavailableException('Bilibili search is unavailable');
-    return (result.data?.result ?? []).flatMap((item) => item.bvid && item.title ? [{
-      id: item.bvid,
-      title: item.title.replace(/<[^>]*>/g, ''),
-      artists: item.author ? [item.author] : [],
-      coverUrl: item.pic?.startsWith('//') ? `https:${item.pic}` : item.pic ?? '',
-      duration: item.duration ?? '',
-      source: 'bilibili' as const,
-    }] : []);
+    return (result.data?.result ?? [])
+      .filter((item) => item.type === 'video' && (!item.typename || item.typename.includes('音乐')))
+      .flatMap((item) => item.bvid && item.title ? [{
+        id: item.bvid,
+        title: item.title.replace(/<[^>]*>/g, ''),
+        artists: item.author ? [item.author] : [],
+        coverUrl: item.pic?.startsWith('//') ? `https:${item.pic}` : item.pic ?? '',
+        duration: item.duration ?? '',
+        source: 'bilibili' as const,
+      }] : []);
   }
 
   async getBilibiliPlayUrl(id: string, cid?: string, cookie?: string): Promise<{ url: string; quality: string; cid: string }> {
+    if (!cookie?.includes('SESSDATA=')) {
+      throw new ServiceUnavailableException('请先在音乐源页绑定有效的哔哩哔哩账号');
+    }
     const bvid = id.trim();
     if (!bvid) throw new ServiceUnavailableException('Bilibili bvid is required');
     const resolvedCid = (cid ?? '').trim() || await this.resolveBilibiliCid(bvid, cookie);
