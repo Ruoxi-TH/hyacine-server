@@ -1,19 +1,14 @@
 #!/usr/bin/env bash
-# 宝塔一键 docker run 部署 v3
-# curl -fsSL https://raw.githubusercontent.com/Ruoxi-TH/hyacine-server/master/scripts/baota-run.sh | bash
+# 宝塔一键整套部署（Compose 一起起 4 个服务）
+# curl -fsSL "https://raw.githubusercontent.com/Ruoxi-TH/hyacine-server/master/scripts/baota-run.sh?v=4" | bash
 
 set -u
 
-SCRIPT_VERSION="2026-07-17-v3"
+SCRIPT_VERSION="2026-07-17-v4-compose"
 REPO_URL="${REPO_URL:-https://github.com/Ruoxi-TH/hyacine-server.git}"
 INSTALL_DIR="${INSTALL_DIR:-/www/wwwroot/hyacine-server}"
 API_PORT="${API_PORT:-3000}"
-NETWORK="hyacine-net"
-DATA_DIR="/www/wwwroot/hyacine-data"
-
-# 镜像源候选（自动回退）
-MIRRORS_DEFAULT="docker.1ms.run docker.m.daocloud.io dockerproxy.com"
-MIRRORS="${MIRRORS:-$MIRRORS_DEFAULT}"
+MIRRORS="${MIRRORS:-docker.1ms.run docker.m.daocloud.io dockerproxy.com}"
 
 log(){ printf '[hyacine] %s\n' "$*"; }
 fail(){ printf '[hyacine] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -26,17 +21,20 @@ random_secret(){
   fi
 }
 
-POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-hyacine_$(date +%s | tail -c 8)}"
-JWT_ACCESS_SECRET="${JWT_ACCESS_SECRET:-$(random_secret)}"
-JWT_REFRESH_SECRET="${JWT_REFRESH_SECRET:-$(random_secret)}"
-
 need_docker(){
   command -v docker >/dev/null 2>&1 || fail "请先在宝塔安装 Docker 管理器"
   docker info >/dev/null 2>&1 || fail "Docker 未启动"
+  if docker compose version >/dev/null 2>&1; then
+    COMPOSE=(docker compose)
+  elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE=(docker-compose)
+  else
+    fail "没有 docker compose，请在宝塔 Docker 里启用 Compose"
+  fi
 }
 
 prepare_repo(){
-  mkdir -p "$(dirname "$INSTALL_DIR")" "$DATA_DIR/postgres" "$DATA_DIR/redis"
+  mkdir -p "$(dirname "$INSTALL_DIR")"
   if [[ -d "$INSTALL_DIR/.git" ]]; then
     log "update repo: $INSTALL_DIR"
     git -C "$INSTALL_DIR" fetch --all --prune || true
@@ -50,136 +48,136 @@ prepare_repo(){
   cd "$INSTALL_DIR" || fail "无法进入 $INSTALL_DIR"
 }
 
-# curl 可能是旧缓存：拉完代码后强制用仓库里最新脚本重跑
 maybe_reexec(){
   if [[ "${HYACINE_REEXEC:-0}" == "1" ]]; then
     return
   fi
   prepare_repo
   if [[ -f "$INSTALL_DIR/scripts/baota-run.sh" ]]; then
-    log "re-exec local script v3 from repo"
+    log "re-exec local script $SCRIPT_VERSION"
     export HYACINE_REEXEC=1
-    export POSTGRES_PASSWORD JWT_ACCESS_SECRET JWT_REFRESH_SECRET API_PORT INSTALL_DIR REPO_URL
+    export API_PORT INSTALL_DIR REPO_URL MIRRORS
     exec bash "$INSTALL_DIR/scripts/baota-run.sh"
   fi
 }
 
-ensure_network(){
-  docker network inspect "$NETWORK" >/dev/null 2>&1 || docker network create "$NETWORK"
+write_env(){
+  if [[ -f .env ]] && ! grep -q 'replace-with-a-strong-database-password' .env 2>/dev/null; then
+    # 保留已有密码，只补字段
+    grep -qE '^API_PORT=' .env || echo "API_PORT=${API_PORT}" >> .env
+    sed -i "s/^API_PORT=.*/API_PORT=${API_PORT}/" .env || true
+    if grep -q 'https://your-web-client.example' .env; then
+      sed -i 's|https://your-web-client.example|*|' .env
+    fi
+    grep -qE '^CORS_ORIGIN=' .env || echo 'CORS_ORIGIN=*' >> .env
+    log "keep existing .env"
+    return
+  fi
+
+  cat > .env <<EOF
+API_PORT=${API_PORT}
+POSTGRES_PASSWORD=$(random_secret | cut -c1-24)
+CORS_ORIGIN=*
+JWT_ACCESS_SECRET=$(random_secret)
+JWT_REFRESH_SECRET=$(random_secret)
+JWT_ACCESS_TTL=15m
+JWT_REFRESH_TTL=30d
+EOF
+  chmod 600 .env || true
+  log "generated .env"
 }
 
-stop_old(){
+# 选一个能 pull 的镜像源，写入 .env 供 compose 用
+pick_images(){
+  local m
+  local node_ok="" pg_ok="" redis_ok="" netease_ok=""
+
+  for m in $MIRRORS; do
+    log "probe mirror: $m"
+    if [[ -z "$pg_ok" ]] && docker pull "$m/library/postgres:16-alpine" >/tmp/hyacine-pull.log 2>&1; then
+      pg_ok="$m/library/postgres:16-alpine"
+      log "postgres ok: $pg_ok"
+    fi
+    if [[ -z "$redis_ok" ]] && docker pull "$m/library/redis:7-alpine" >/tmp/hyacine-pull.log 2>&1; then
+      redis_ok="$m/library/redis:7-alpine"
+      log "redis ok: $redis_ok"
+    fi
+    if [[ -z "$node_ok" ]] && docker pull "$m/library/node:20-alpine" >/tmp/hyacine-pull.log 2>&1; then
+      node_ok="$m/library/node:20-alpine"
+      log "node ok: $node_ok"
+    fi
+    if [[ -z "$netease_ok" ]] && docker pull "$m/binaryify/netease_cloud_music_api:latest" >/tmp/hyacine-pull.log 2>&1; then
+      netease_ok="$m/binaryify/netease_cloud_music_api:latest"
+      log "netease ok: $netease_ok"
+    fi
+    if [[ -n "$pg_ok" && -n "$redis_ok" && -n "$node_ok" && -n "$netease_ok" ]]; then
+      break
+    fi
+  done
+
+  # 官方兜底
+  if [[ -z "$pg_ok" ]]; then
+    docker pull postgres:16-alpine >/tmp/hyacine-pull.log 2>&1 && pg_ok="postgres:16-alpine" || true
+  fi
+  if [[ -z "$redis_ok" ]]; then
+    docker pull redis:7-alpine >/tmp/hyacine-pull.log 2>&1 && redis_ok="redis:7-alpine" || true
+  fi
+  if [[ -z "$node_ok" ]]; then
+    docker pull node:20-alpine >/tmp/hyacine-pull.log 2>&1 && node_ok="node:20-alpine" || true
+  fi
+  if [[ -z "$netease_ok" ]]; then
+    docker pull binaryify/netease_cloud_music_api:latest >/tmp/hyacine-pull.log 2>&1 && netease_ok="binaryify/netease_cloud_music_api:latest" || true
+  fi
+
+  [[ -n "$pg_ok" ]] || fail "postgres 镜像拉取失败"
+  [[ -n "$redis_ok" ]] || fail "redis 镜像拉取失败"
+  [[ -n "$node_ok" ]] || fail "node 镜像拉取失败"
+  [[ -n "$netease_ok" ]] || fail "netease 镜像拉取失败"
+
+  # 写入/更新 .env 镜像变量
+  for k in POSTGRES_IMAGE REDIS_IMAGE NODE_IMAGE NETEASE_IMAGE; do
+    sed -i "/^${k}=/d" .env 2>/dev/null || true
+  done
+  {
+    echo "POSTGRES_IMAGE=${pg_ok}"
+    echo "REDIS_IMAGE=${redis_ok}"
+    echo "NODE_IMAGE=${node_ok}"
+    echo "NETEASE_IMAGE=${netease_ok}"
+  } >> .env
+
+  export POSTGRES_IMAGE="$pg_ok"
+  export REDIS_IMAGE="$redis_ok"
+  export NODE_IMAGE="$node_ok"
+  export NETEASE_IMAGE="$netease_ok"
+}
+
+stop_old_single_containers(){
+  # 清理之前 docker run 方式留下的散装容器
   for c in hyacine-api hyacine-netease hyacine-postgres hyacine-redis; do
     docker rm -f "$c" >/dev/null 2>&1 || true
   done
 }
 
-# 尝试多个镜像源拉取
-pull_with_mirrors(){
-  local path="$1"   # 例如 library/postgres:16-alpine 或 binaryify/netease_cloud_music_api:latest
-  local out_var="$2"
-  local m img
-  for m in $MIRRORS; do
-    img="${m}/${path}"
-    log "try pull $img"
-    if docker pull "$img" >/tmp/hyacine-pull.log 2>&1; then
-      eval "$out_var=\"$img\""
-      log "ok: $img"
-      return 0
-    fi
-    log "fail: $img"
-  done
-  # 最后试官方
-  img="${path#library/}"
-  if [[ "$path" == library/* ]]; then
-    img="${path#library/}"
-  else
-    img="$path"
-  fi
-  log "try pull docker.io/$img"
-  if docker pull "$img" >/tmp/hyacine-pull.log 2>&1; then
-    eval "$out_var=\"$img\""
-    log "ok: $img"
-    return 0
-  fi
-  cat /tmp/hyacine-pull.log || true
-  fail "所有镜像源都拉失败: $path"
-}
-
-run_postgres(){
-  # 关键：不映射主机 5432，避免 address already in use
-  docker run -d \
-    --name hyacine-postgres \
-    --network "$NETWORK" \
-    --restart unless-stopped \
-    -e POSTGRES_DB=hyacine \
-    -e POSTGRES_USER=hyacine \
-    -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
-    -v "$DATA_DIR/postgres:/var/lib/postgresql/data" \
-    "$IMG_POSTGRES" \
-    || fail "postgres 启动失败"
-}
-
-run_redis(){
-  # 不映射主机 6379
-  docker run -d \
-    --name hyacine-redis \
-    --network "$NETWORK" \
-    --restart unless-stopped \
-    -v "$DATA_DIR/redis:/data" \
-    "$IMG_REDIS" \
-    redis-server --appendonly yes \
-    || fail "redis 启动失败"
-}
-
-run_netease(){
-  docker run -d \
-    --name hyacine-netease \
-    --network "$NETWORK" \
-    --restart unless-stopped \
-    -e PORT=3000 \
-    "$IMG_NETEASE" \
-    || fail "netease 启动失败"
-}
-
-build_and_run_api(){
-  log "building api with NODE_IMAGE=$IMG_NODE"
-  docker build \
-    --build-arg "NODE_IMAGE=$IMG_NODE" \
-    -t hyacine-server:latest \
-    "$INSTALL_DIR" \
-    || fail "api 镜像构建失败"
-
-  docker run -d \
-    --name hyacine-api \
-    --network "$NETWORK" \
-    --restart unless-stopped \
-    -e NODE_ENV=production \
-    -e PORT=3000 \
-    -e DATABASE_URL="postgresql://hyacine:${POSTGRES_PASSWORD}@hyacine-postgres:5432/hyacine?schema=public" \
-    -e REDIS_URL="redis://hyacine-redis:6379" \
-    -e NETEASE_API_BASE="http://hyacine-netease:3000" \
-    -e CORS_ORIGIN="*" \
-    -e JWT_ACCESS_SECRET="$JWT_ACCESS_SECRET" \
-    -e JWT_REFRESH_SECRET="$JWT_REFRESH_SECRET" \
-    -e JWT_ACCESS_TTL=15m \
-    -e JWT_REFRESH_TTL=30d \
-    -p "${API_PORT}:3000" \
-    hyacine-server:latest \
-    || fail "api 启动失败"
+compose_up(){
+  log "compose up all services together"
+  "${COMPOSE[@]}" pull || true
+  "${COMPOSE[@]}" up -d --build --remove-orphans || fail "compose 启动失败"
 }
 
 wait_health(){
-  local i
+  local port i
+  port="$(grep -E '^API_PORT=' .env | tail -n1 | cut -d= -f2-)"
+  port="${port:-$API_PORT}"
   for ((i=1;i<=90;i++)); do
-    if curl -fsS "http://127.0.0.1:${API_PORT}/api/v1/health" >/dev/null 2>&1; then
+    if curl -fsS "http://127.0.0.1:${port}/api/v1/health" >/dev/null 2>&1; then
       log "health ok"
       return 0
     fi
     sleep 2
   done
   log "health timeout"
-  docker logs --tail 100 hyacine-api || true
+  "${COMPOSE[@]}" ps || true
+  "${COMPOSE[@]}" logs --tail=80 api || true
   return 1
 }
 
@@ -187,53 +185,25 @@ main(){
   log "script $SCRIPT_VERSION"
   need_docker
   maybe_reexec
-  # reexec 后从这里继续
   prepare_repo
-  ensure_network
-  stop_old
-
-  pull_with_mirrors "library/postgres:16-alpine" IMG_POSTGRES
-  pull_with_mirrors "library/redis:7-alpine" IMG_REDIS
-  pull_with_mirrors "binaryify/netease_cloud_music_api:latest" IMG_NETEASE
-  pull_with_mirrors "library/node:20-alpine" IMG_NODE
-
-  log "start postgres (no host 5432)"
-  run_postgres
-  sleep 5
-
-  log "start redis (no host 6379)"
-  run_redis
-
-  log "start netease"
-  run_netease
-
-  log "start api"
-  build_and_run_api
-
+  write_env
+  stop_old_single_containers
+  pick_images
+  compose_up
   wait_health || true
 
-  local ip
+  local ip port
   ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
   ip="${ip:-服务器IP}"
+  port="$(grep -E '^API_PORT=' .env | tail -n1 | cut -d= -f2-)"
+  port="${port:-3000}"
 
-  cat > "$INSTALL_DIR/.env.runtime" <<EOF
-POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
-JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
-API_PORT=${API_PORT}
-IMG_POSTGRES=${IMG_POSTGRES}
-IMG_REDIS=${IMG_REDIS}
-IMG_NETEASE=${IMG_NETEASE}
-IMG_NODE=${IMG_NODE}
-EOF
-  chmod 600 "$INSTALL_DIR/.env.runtime" || true
-
-  log "done"
-  docker ps --filter name=hyacine- || true
-  log "API: http://${ip}:${API_PORT}"
-  log "health: http://${ip}:${API_PORT}/api/v1/health"
-  log "手机端填: http://${ip}:${API_PORT}"
-  log "密码文件: ${INSTALL_DIR}/.env.runtime"
+  log "done - 一套一起装完"
+  "${COMPOSE[@]}" ps || true
+  log "API: http://${ip}:${port}"
+  log "health: http://${ip}:${port}/api/v1/health"
+  log "手机端填: http://${ip}:${port}"
+  log "目录: $INSTALL_DIR"
 }
 
 main "$@"

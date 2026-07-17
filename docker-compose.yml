@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:20-alpine}
     image: hyacine-server:latest
     container_name: hyacine-api
     restart: unless-stopped
@@ -31,7 +33,7 @@ services:
       start_period: 40s
 
   netease:
-    image: binaryify/netease_cloud_music_api:latest
+    image: ${NETEASE_IMAGE:-binaryify/netease_cloud_music_api:latest}
     container_name: hyacine-netease
     restart: unless-stopped
     environment:
@@ -40,15 +42,14 @@ services:
       - "3000"
 
   postgres:
-    image: postgres:16-alpine
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     container_name: hyacine-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: hyacine
       POSTGRES_USER: hyacine
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+    # 不映射主机 5432，避免和宝塔自带 postgres 冲突
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -58,12 +59,11 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: ${REDIS_IMAGE:-redis:7-alpine}
     container_name: hyacine-redis
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+    # 不映射主机 6379
     volumes:
       - redis_data:/data
     healthcheck:
