@@ -10,6 +10,7 @@ interface NeteaseAccountResponse { account?: { id?: number }; profile?: { userId
 interface NeteaseUserPlaylistsResponse { playlist?: Array<{ id?: number; name?: string; coverImgUrl?: string; playCount?: number; trackCount?: number; description?: string }>; code?: number; }
 interface NeteaseSearchResponse { result?: { songs?: Array<{ id?: number; name?: string; artists?: Array<{ name?: string }>; ar?: Array<{ name?: string }>; album?: { name?: string; picUrl?: string }; al?: { name?: string; picUrl?: string }; duration?: number; dt?: number }> }; code?: number; }
 interface NeteasePlayUrlResponse { data?: Array<{ id?: number; url?: string; br?: number; size?: number; md5?: string; code?: number }>; code?: number; }
+interface NeteaseDailySongsResponse { data?: { dailySongs?: Array<{ id?: number; name?: string; ar?: Array<{ name?: string }>; al?: { name?: string; picUrl?: string }; dt?: number }> }; code?: number; }
 
 // Interfaces for Bilibili API responses
 interface BilibiliNavResponse { code?: number; data?: { isLogin?: boolean; wbi_img?: { img_url?: string; sub_url?: string } }; }
@@ -51,6 +52,19 @@ export class MusicSourcesService {
       playCount: item.playcount ?? 0,
       trackCount: item.trackCount ?? 0,
       description: item.copywriter ?? '',
+    }] : []);
+  }
+
+  async getNeteaseDailySongs(cookie: string): Promise<NeteaseTrack[]> {
+    const result = await this.request<NeteaseDailySongsResponse>(this.neteaseBaseUrl(), `/recommend/songs?timestamp=${Date.now()}`, cookie);
+    return (result.data?.dailySongs ?? []).flatMap((song) => song.id && song.name ? [{
+      id: song.id,
+      title: song.name,
+      artists: (song.ar ?? []).flatMap((artist) => artist.name ? [artist.name] : []),
+      album: '',
+      coverUrl: song.al?.picUrl ?? '',
+      durationMs: song.dt ?? 0,
+      source: 'netease' as const,
     }] : []);
   }
 
@@ -148,29 +162,27 @@ export class MusicSourcesService {
     const resolvedCid = (cid ?? '').trim() || await this.resolveBilibiliCid(bvid, cookie);
     if (!resolvedCid) throw new ServiceUnavailableException('Failed to resolve Bilibili cid');
 
-    const query = new URLSearchParams({
-      bvid,
-      cid: resolvedCid,
-      qn: '80',
-      fnval: '16',
-      fourk: '1',
-    });
-    const result = await this.bilibiliRequest<BilibiliPlayUrlResponse>(`/x/player/playurl?${query.toString()}`, cookie);
-    if (result.code !== 0) {
-      throw new ServiceUnavailableException(`Bilibili playurl failed: code ${result.code}`);
+    const variants = [
+      { qn: '80', fnval: '4048', fourk: '1' },
+      { qn: '64', fnval: '16', fourk: '0' },
+      { qn: '32', fnval: '0', fourk: '0' },
+    ];
+    let lastCode: number | undefined;
+    for (const variant of variants) {
+      const query = new URLSearchParams({ bvid, cid: resolvedCid, fnver: '0', ...variant });
+      const result = await this.bilibiliRequest<BilibiliPlayUrlResponse>(`/x/player/playurl?${query.toString()}`, cookie);
+      lastCode = result.code;
+      if (result.code !== 0) continue;
+      const dash = result.data?.dash?.audio ?? [];
+      if (dash.length > 0) {
+        const audio = [...dash].sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0];
+        const url = audio?.baseUrl || audio?.backupUrl?.[0] || '';
+        if (url) return { url, quality: `dash_${audio?.id ?? 0}`, cid: resolvedCid };
+      }
+      const durl = result.data?.durl?.[0];
+      if (durl?.url) return { url: durl.url, quality: 'durl', cid: resolvedCid };
     }
-
-    const dash = result.data?.dash?.audio ?? [];
-    if (dash.length > 0) {
-      const audio = [...dash].sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0];
-      const url = audio?.baseUrl || audio?.backupUrl?.[0] || '';
-      if (url) return { url, quality: `dash_${audio?.id ?? 0}`, cid: resolvedCid };
-    }
-
-    const durl = result.data?.durl?.[0];
-    if (durl?.url) {
-      return { url: durl.url, quality: 'durl', cid: resolvedCid };
-    }
+    if (lastCode !== undefined) throw new ServiceUnavailableException(`Bilibili playurl failed: code ${lastCode}`);
     throw new ServiceUnavailableException('No playable stream found for Bilibili video');
   }
 

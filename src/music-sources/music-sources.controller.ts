@@ -28,6 +28,12 @@ export class MusicSourcesController {
     return this.sources.getNeteaseRecommendations(dto.cookie);
   }
 
+  @Post('netease/daily-songs')
+  @HttpCode(200)
+  getNeteaseDailySongs(@Body() dto: NeteaseRecommendationsDto): Promise<NeteaseTrack[]> {
+    return this.sources.getNeteaseDailySongs(dto.cookie);
+  }
+
   @Post('netease/playlists')
   @HttpCode(200)
   getNeteasePlaylists(@Body() dto: NeteasePlaylistsDto): Promise<NeteasePlaylist[]> {
