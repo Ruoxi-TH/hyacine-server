@@ -1,28 +1,34 @@
 #!/usr/bin/env bash
-# 宝塔一键 docker run 部署（国内镜像兼容）
-# 用法：
+# 宝塔一键 docker run 部署 v3
 # curl -fsSL https://raw.githubusercontent.com/Ruoxi-TH/hyacine-server/master/scripts/baota-run.sh | bash
 
 set -u
 
+SCRIPT_VERSION="2026-07-17-v3"
 REPO_URL="${REPO_URL:-https://github.com/Ruoxi-TH/hyacine-server.git}"
 INSTALL_DIR="${INSTALL_DIR:-/www/wwwroot/hyacine-server}"
 API_PORT="${API_PORT:-3000}"
-POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-hyacine_$(date +%s | tail -c 8)}"
-JWT_ACCESS_SECRET="${JWT_ACCESS_SECRET:-$(openssl rand -hex 32 2>/dev/null || echo hyacine_access_secret_change_me_32bytes_xx)}"
-JWT_REFRESH_SECRET="${JWT_REFRESH_SECRET:-$(openssl rand -hex 32 2>/dev/null || echo hyacine_refresh_secret_change_me_32bytesx)}"
 NETWORK="hyacine-net"
 DATA_DIR="/www/wwwroot/hyacine-data"
 
-# 国内镜像前缀，可覆盖：MIRROR=docker.1ms.run
-MIRROR="${MIRROR:-docker.1ms.run}"
-IMG_NODE="${IMG_NODE:-${MIRROR}/library/node:20-alpine}"
-IMG_POSTGRES="${IMG_POSTGRES:-${MIRROR}/library/postgres:16-alpine}"
-IMG_REDIS="${IMG_REDIS:-${MIRROR}/library/redis:7-alpine}"
-IMG_NETEASE="${IMG_NETEASE:-${MIRROR}/binaryify/netease_cloud_music_api:latest}"
+# 镜像源候选（自动回退）
+MIRRORS_DEFAULT="docker.1ms.run docker.m.daocloud.io dockerproxy.com"
+MIRRORS="${MIRRORS:-$MIRRORS_DEFAULT}"
 
 log(){ printf '[hyacine] %s\n' "$*"; }
 fail(){ printf '[hyacine] ERROR: %s\n' "$*" >&2; exit 1; }
+
+random_secret(){
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 32
+  else
+    date +%s%N | sha256sum | awk '{print $1}'
+  fi
+}
+
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-hyacine_$(date +%s | tail -c 8)}"
+JWT_ACCESS_SECRET="${JWT_ACCESS_SECRET:-$(random_secret)}"
+JWT_REFRESH_SECRET="${JWT_REFRESH_SECRET:-$(random_secret)}"
 
 need_docker(){
   command -v docker >/dev/null 2>&1 || fail "请先在宝塔安装 Docker 管理器"
@@ -33,7 +39,8 @@ prepare_repo(){
   mkdir -p "$(dirname "$INSTALL_DIR")" "$DATA_DIR/postgres" "$DATA_DIR/redis"
   if [[ -d "$INSTALL_DIR/.git" ]]; then
     log "update repo: $INSTALL_DIR"
-    git -C "$INSTALL_DIR" pull --ff-only || true
+    git -C "$INSTALL_DIR" fetch --all --prune || true
+    git -C "$INSTALL_DIR" reset --hard origin/master || git -C "$INSTALL_DIR" pull --ff-only || true
   else
     command -v git >/dev/null 2>&1 || fail "缺少 git"
     rm -rf "$INSTALL_DIR"
@@ -41,6 +48,20 @@ prepare_repo(){
     git clone "$REPO_URL" "$INSTALL_DIR"
   fi
   cd "$INSTALL_DIR" || fail "无法进入 $INSTALL_DIR"
+}
+
+# curl 可能是旧缓存：拉完代码后强制用仓库里最新脚本重跑
+maybe_reexec(){
+  if [[ "${HYACINE_REEXEC:-0}" == "1" ]]; then
+    return
+  fi
+  prepare_repo
+  if [[ -f "$INSTALL_DIR/scripts/baota-run.sh" ]]; then
+    log "re-exec local script v3 from repo"
+    export HYACINE_REEXEC=1
+    export POSTGRES_PASSWORD JWT_ACCESS_SECRET JWT_REFRESH_SECRET API_PORT INSTALL_DIR REPO_URL
+    exec bash "$INSTALL_DIR/scripts/baota-run.sh"
+  fi
 }
 
 ensure_network(){
@@ -53,21 +74,40 @@ stop_old(){
   done
 }
 
-# 清理坏掉的本地镜像缓存（text/html 拉失败残留）
-clean_bad_images(){
-  docker image prune -f >/dev/null 2>&1 || true
-}
-
-pull_image(){
-  local img="$1"
-  log "pull $img"
-  if ! docker pull "$img"; then
-    fail "拉取镜像失败: $img （可换 MIRROR=docker.m.daocloud.io 再试）"
+# 尝试多个镜像源拉取
+pull_with_mirrors(){
+  local path="$1"   # 例如 library/postgres:16-alpine 或 binaryify/netease_cloud_music_api:latest
+  local out_var="$2"
+  local m img
+  for m in $MIRRORS; do
+    img="${m}/${path}"
+    log "try pull $img"
+    if docker pull "$img" >/tmp/hyacine-pull.log 2>&1; then
+      eval "$out_var=\"$img\""
+      log "ok: $img"
+      return 0
+    fi
+    log "fail: $img"
+  done
+  # 最后试官方
+  img="${path#library/}"
+  if [[ "$path" == library/* ]]; then
+    img="${path#library/}"
+  else
+    img="$path"
   fi
+  log "try pull docker.io/$img"
+  if docker pull "$img" >/tmp/hyacine-pull.log 2>&1; then
+    eval "$out_var=\"$img\""
+    log "ok: $img"
+    return 0
+  fi
+  cat /tmp/hyacine-pull.log || true
+  fail "所有镜像源都拉失败: $path"
 }
 
 run_postgres(){
-  # 不映射主机 5432，避免和宝塔/本机 postgres 冲突；容器内互通即可
+  # 关键：不映射主机 5432，避免 address already in use
   docker run -d \
     --name hyacine-postgres \
     --network "$NETWORK" \
@@ -81,6 +121,7 @@ run_postgres(){
 }
 
 run_redis(){
+  # 不映射主机 6379
   docker run -d \
     --name hyacine-redis \
     --network "$NETWORK" \
@@ -102,52 +143,12 @@ run_netease(){
 }
 
 build_and_run_api(){
-  log "building api image with $IMG_NODE ..."
-  # 用国内 node 镜像，避免 docker.io 拉失败
-  if ! docker build \
+  log "building api with NODE_IMAGE=$IMG_NODE"
+  docker build \
+    --build-arg "NODE_IMAGE=$IMG_NODE" \
     -t hyacine-server:latest \
-    -f - "$INSTALL_DIR" <<EOF
-FROM ${IMG_NODE} AS base
-WORKDIR /app
-ENV PNPM_HOME=/pnpm \\
-    PATH=/pnpm:\$PATH \\
-    CI=true \\
-    COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-RUN corepack enable
-
-FROM base AS deps
-RUN apk add --no-cache python3 make g++
-COPY package.json pnpm-lock.yaml ./
-COPY prisma ./prisma
-RUN pnpm install --frozen-lockfile
-
-FROM deps AS build
-COPY nest-cli.json tsconfig.json tsconfig.build.json ./
-COPY src ./src
-RUN pnpm prisma:generate && pnpm build
-
-FROM base AS production
-ENV NODE_ENV=production
-RUN apk add --no-cache openssl tini \\
-  && addgroup -S hyacine \\
-  && adduser -S -G hyacine hyacine
-WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
-COPY prisma ./prisma
-RUN pnpm install --frozen-lockfile --prod \\
-  && pnpm prisma:generate \\
-  && chown -R hyacine:hyacine /app
-COPY --from=build --chown=hyacine:hyacine /app/dist ./dist
-USER hyacine
-EXPOSE 3000
-HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=5 \\
-  CMD wget -qO- http://127.0.0.1:3000/api/v1/health >/dev/null 2>&1 || exit 1
-ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["sh", "-c", "pnpm prisma:deploy && node dist/main"]
-EOF
-  then
-    fail "api 镜像构建失败"
-  fi
+    "$INSTALL_DIR" \
+    || fail "api 镜像构建失败"
 
   docker run -d \
     --name hyacine-api \
@@ -177,28 +178,30 @@ wait_health(){
     fi
     sleep 2
   done
-  log "health timeout，看日志: docker logs -f hyacine-api"
-  docker logs --tail 80 hyacine-api || true
+  log "health timeout"
+  docker logs --tail 100 hyacine-api || true
   return 1
 }
 
 main(){
+  log "script $SCRIPT_VERSION"
   need_docker
+  maybe_reexec
+  # reexec 后从这里继续
   prepare_repo
   ensure_network
   stop_old
-  clean_bad_images
 
-  pull_image "$IMG_POSTGRES"
-  pull_image "$IMG_REDIS"
-  pull_image "$IMG_NETEASE"
-  pull_image "$IMG_NODE"
+  pull_with_mirrors "library/postgres:16-alpine" IMG_POSTGRES
+  pull_with_mirrors "library/redis:7-alpine" IMG_REDIS
+  pull_with_mirrors "binaryify/netease_cloud_music_api:latest" IMG_NETEASE
+  pull_with_mirrors "library/node:20-alpine" IMG_NODE
 
-  log "start postgres"
+  log "start postgres (no host 5432)"
   run_postgres
   sleep 5
 
-  log "start redis"
+  log "start redis (no host 6379)"
   run_redis
 
   log "start netease"
@@ -218,17 +221,19 @@ POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
 JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
 API_PORT=${API_PORT}
-MIRROR=${MIRROR}
+IMG_POSTGRES=${IMG_POSTGRES}
+IMG_REDIS=${IMG_REDIS}
+IMG_NETEASE=${IMG_NETEASE}
+IMG_NODE=${IMG_NODE}
 EOF
   chmod 600 "$INSTALL_DIR/.env.runtime" || true
 
   log "done"
-  docker ps --filter name=hyacine-
+  docker ps --filter name=hyacine- || true
   log "API: http://${ip}:${API_PORT}"
   log "health: http://${ip}:${API_PORT}/api/v1/health"
   log "手机端填: http://${ip}:${API_PORT}"
-  log "密码已保存: ${INSTALL_DIR}/.env.runtime"
-  log "如 pull 失败可换: MIRROR=docker.m.daocloud.io bash scripts/baota-run.sh"
+  log "密码文件: ${INSTALL_DIR}/.env.runtime"
 }
 
 main "$@"

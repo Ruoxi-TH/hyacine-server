@@ -1,4 +1,5 @@
-FROM node:20-alpine AS base
+ARG NODE_IMAGE=node:20-alpine
+FROM ${NODE_IMAGE} AS base
 WORKDIR /app
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
@@ -7,7 +8,6 @@ ENV PNPM_HOME=/pnpm \
 RUN corepack enable
 
 FROM base AS deps
-# native build tools for argon2 etc.
 RUN apk add --no-cache python3 make g++
 COPY package.json pnpm-lock.yaml ./
 COPY prisma ./prisma
@@ -20,15 +20,12 @@ RUN pnpm prisma:generate && pnpm build
 
 FROM base AS production
 ENV NODE_ENV=production
-# openssl needed by Prisma engines on alpine
 RUN apk add --no-cache openssl tini \
   && addgroup -S hyacine \
   && adduser -S -G hyacine hyacine
 WORKDIR /app
-
 COPY package.json pnpm-lock.yaml ./
 COPY prisma ./prisma
-# only production deps in final image
 RUN pnpm install --frozen-lockfile --prod \
   && pnpm prisma:generate \
   && chown -R hyacine:hyacine /app
