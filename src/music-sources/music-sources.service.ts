@@ -1,14 +1,20 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+// Interfaces for Netease API responses
 interface NeteaseQrResponse { data?: { unikey?: string; qrurl?: string }; code?: number; }
 interface NeteaseStatusResponse { code?: number; cookie?: string; message?: string; }
 interface NeteaseRecommendResponse { recommend?: Array<{ id?: number; name?: string; picUrl?: string; playcount?: number; trackCount?: number; copywriter?: string }>; code?: number; }
 interface NeteaseAccountResponse { account?: { id?: number }; profile?: { userId?: number }; code?: number; }
 interface NeteaseUserPlaylistsResponse { playlist?: Array<{ id?: number; name?: string; coverImgUrl?: string; playCount?: number; trackCount?: number; description?: string }>; code?: number; }
-interface NeteaseSearchResponse { result?: { songs?: Array<{ id?: number; name?: string; artists?: Array<{ name?: string }>; album?: { name?: string; picUrl?: string }; duration?: number }> }; code?: number; }
+interface NeteaseSearchResponse { result?: { songs?: Array<{ id?: number; name?: string; artists?: Array<{ name?: string }>; album?: { name?: string; picUrl?: string }; duration?: number; url?: string; br?: number }> }; code?: number; }
+interface NeteasePlayUrlResponse { data?: Array<{ id?: number; url?: string; br?: number; size?: number; md5?: string; code?: number }>; code?: number; }
+
+// Interfaces for Bilibili API responses
 interface BilibiliNavResponse { code?: number; data?: { isLogin?: boolean }; }
 interface BilibiliSearchResponse { code?: number; data?: { result?: Array<{ bvid?: string; title?: string; author?: string; pic?: string; duration?: string }> }; }
+interface BilibiliPlayUrlResponse { code?: number; data?: { durl?: Array<{ url?: string; size?: number; length?: number }>; dash?: { audio?: Array<{ id?: number; baseUrl?: string; backupUrl?: string[] }> } }; }
+
 export interface NeteasePlaylist { id: number; name: string; coverUrl: string; playCount: number; trackCount: number; description: string; }
 export interface NeteaseTrack { id: number; title: string; artists: string[]; album: string; coverUrl: string; durationMs: number; source: 'netease'; }
 export interface BilibiliTrack { id: string; title: string; artists: string[]; coverUrl: string; duration: string; source: 'bilibili'; }
@@ -76,6 +82,26 @@ export class MusicSourcesService {
       source: 'netease' as const,
     }] : []);
   }
+
+  async getNeteasePlayUrl(id: number, level = 'exhigh', cookie?: string): Promise<{ url: string; br: number }> {
+    const base = this.neteaseBaseUrl();
+    // Try v1 endpoint first (supports level)
+    const query = new URLSearchParams({ id: String(id), level, timestamp: String(Date.now()) });
+    const result = await this.request<NeteasePlayUrlResponse>(base, `/song/url/v1?${query.toString()}`, cookie);
+    const data = result.data?.[0];
+    if (data?.url && data.code === 200) {
+      return { url: data.url, br: data.br ?? 0 };
+    }
+    // Fallback to old endpoint
+    const fallbackQuery = new URLSearchParams({ id: String(id), timestamp: String(Date.now()) });
+    const fallback = await this.request<NeteasePlayUrlResponse>(base, `/song/url?${fallbackQuery.toString()}`, cookie);
+    const fallbackData = fallback.data?.[0];
+    if (fallbackData?.url && fallbackData.code === 200) {
+      return { url: fallbackData.url, br: fallbackData.br ?? 0 };
+    }
+    throw new ServiceUnavailableException('Failed to get Netease play URL');
+  }
+
   async validateBilibiliCookie(cookie: string): Promise<{ valid: boolean }> {
     const names = new Set(cookie.split(';').map((part) => part.trim().split('=')[0]));
     if (!names.has('SESSDATA') || !names.has('bili_jct')) return { valid: false };
@@ -101,6 +127,34 @@ export class MusicSourcesService {
     }] : []);
   }
 
+  async getBilibiliPlayUrl(id: string, cid: string, cookie?: string): Promise<{ url: string; quality: string }> {
+    const query = new URLSearchParams({
+      bvid: id,
+      cid: cid,
+      qn: '64',
+      fnval: '16',
+      type: 'json',
+    });
+    const result = await this.bilibiliRequest<BilibiliPlayUrlResponse>(`/x/player/playurl?${query.toString()}`, cookie);
+    
+    if (result.code !== 0) {
+      throw new ServiceUnavailableException(`Bilibili playurl failed: code ${result.code}`);
+    }
+
+    const dash = result.data?.dash?.audio;
+    if (dash && dash.length > 0) {
+      const audio = dash.sort((a, b) => (a.id ?? 0) - (b.id ?? 0))[0];
+      return { url: audio?.baseUrl ?? '', quality: `dash_${audio?.id ?? 0}` };
+    }
+
+    const durl = result.data?.durl?.[0];
+    if (durl?.url) {
+      return { url: durl.url, quality: 'durl' };
+    }
+
+    throw new ServiceUnavailableException('No playable stream found for Bilibili video');
+  }
+
   private neteaseBaseUrl(): string {
     const value = this.config.get<string>('NETEASE_API_BASE');
     if (!value) throw new ServiceUnavailableException('NETEASE_API_BASE is not configured');
@@ -109,21 +163,35 @@ export class MusicSourcesService {
 
   private async bilibiliRequest<T>(path: string, cookie?: string): Promise<T> {
     try {
-      const response = await fetch(`https://api.bilibili.com${path}`, { headers: { Accept: 'application/json', Referer: 'https://www.bilibili.com/', 'User-Agent': 'HyacineServer/1.0', ...(cookie ? { Cookie: cookie } : {}) }, signal: AbortSignal.timeout(10_000) });
+      const response = await fetch(`https://api.bilibili.com${path}`, {
+        headers: {
+          Accept: 'application/json',
+          Referer: 'https://www.bilibili.com/',
+          'User-Agent': 'HyacineServer/1.0',
+          ...(cookie ? { Cookie: cookie } : {}),
+        },
+        signal: AbortSignal.timeout(10_000),
+      });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.json() as T;
-    } catch {
-      throw new ServiceUnavailableException('Bilibili provider is unavailable');
+    } catch (err: any) {
+      throw new ServiceUnavailableException(err?.message || 'Bilibili provider is unavailable');
     }
   }
 
   private async request<T>(base: string, path: string, cookie?: string): Promise<T> {
     try {
-      const response = await fetch(`${base}${path}`, { headers: { Accept: 'application/json', ...(cookie ? { Cookie: cookie } : {}) } });
+      const response = await fetch(`${base}${path}`, {
+        headers: {
+          Accept: 'application/json',
+          ...(cookie ? { Cookie: cookie } : {}),
+        },
+        signal: AbortSignal.timeout(10_000),
+      });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.json() as T;
-    } catch {
-      throw new ServiceUnavailableException('Netease QR provider is unavailable');
+    } catch (err: any) {
+      throw new ServiceUnavailableException(err?.message || 'Netease provider is unavailable');
     }
   }
 }
