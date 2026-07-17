@@ -1,8 +1,11 @@
-import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Param, Post, Res } from '@nestjs/common';
+import { Readable } from 'node:stream';
+import type { Response } from 'express';
 import { BilibiliCookieDto } from './dto/bilibili-cookie.dto';
 import { BilibiliSearchDto } from './dto/bilibili-search.dto';
 import { BilibiliPlayUrlDto } from './dto/bilibili-play-url.dto';
 import { NeteaseRecommendationsDto } from './dto/netease-recommendations.dto';
+import { NeteaseCreatePlaylistDto } from './dto/netease-create-playlist.dto';
 import { NeteasePlaylistsDto } from './dto/netease-playlists.dto';
 import { NeteaseSearchDto } from './dto/netease-search.dto';
 import { NeteasePlayUrlDto } from './dto/netease-play-url.dto';
@@ -39,6 +42,11 @@ export class MusicSourcesController {
   getNeteasePlaylists(@Body() dto: NeteasePlaylistsDto): Promise<NeteasePlaylist[]> {
     return this.sources.getNeteasePlaylists(dto.cookie);
   }
+  @Post('netease/playlists/create')
+  @HttpCode(201)
+  createNeteasePlaylist(@Body() dto: NeteaseCreatePlaylistDto): Promise<NeteasePlaylist> {
+    return this.sources.createNeteasePlaylist(dto.name, dto.cookie);
+  }
 
   @Post('netease/search')
   @HttpCode(200)
@@ -48,10 +56,28 @@ export class MusicSourcesController {
 
   @Post('netease/play-url')
   @HttpCode(200)
-  getNeteasePlayUrl(@Body() dto: NeteasePlayUrlDto): Promise<{ url: string; br: number }> {
-    return this.sources.getNeteasePlayUrl(dto.id, dto.level, dto.cookie);
+  async getNeteasePlayUrl(@Body() dto: NeteasePlayUrlDto): Promise<{ url: string; br: number }> {
+    const result = await this.sources.getNeteasePlayUrl(dto.id, dto.level, dto.cookie);
+    return { ...result, url: result.url };
   }
-
+  @Get('netease/stream/:token')
+  async streamNetease(
+    @Param('token') token: string,
+    @Headers('range') range: string | undefined,
+    @Res() response: Response,
+  ): Promise<void> {
+    const upstream = await this.sources.getNeteaseStream(token, range);
+    response.status(upstream.status);
+    for (const header of ['accept-ranges', 'content-length', 'content-range', 'content-type']) {
+      const value = upstream.headers.get(header);
+      if (value) response.setHeader(header, value);
+    }
+    if (!upstream.body) {
+      response.end();
+      return;
+    }
+    Readable.fromWeb(upstream.body as import('stream/web').ReadableStream).pipe(response);
+  }
   @Post('bilibili/validate-cookie')
   @HttpCode(200)
   validateBilibiliCookie(@Body() dto: BilibiliCookieDto): Promise<{ valid: boolean }> {

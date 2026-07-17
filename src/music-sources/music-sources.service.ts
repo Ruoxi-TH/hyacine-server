@@ -1,6 +1,6 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 // Interfaces for Netease API responses
 interface NeteaseQrResponse { data?: { unikey?: string; qrurl?: string }; code?: number; }
@@ -11,6 +11,7 @@ interface NeteaseUserPlaylistsResponse { playlist?: Array<{ id?: number; name?: 
 interface NeteaseSearchResponse { result?: { songs?: Array<{ id?: number; name?: string; artists?: Array<{ name?: string }>; ar?: Array<{ name?: string }>; album?: { name?: string; picUrl?: string }; al?: { name?: string; picUrl?: string }; duration?: number; dt?: number }> }; code?: number; }
 interface NeteasePlayUrlResponse { data?: Array<{ id?: number; url?: string; br?: number; size?: number; md5?: string; code?: number }>; code?: number; }
 interface NeteaseDailySongsResponse { data?: { dailySongs?: Array<{ id?: number; name?: string; ar?: Array<{ name?: string }>; al?: { name?: string; picUrl?: string }; dt?: number }> }; code?: number; }
+interface NeteaseCreatePlaylistResponse { playlist?: { id?: number; name?: string; coverImgUrl?: string; playCount?: number; trackCount?: number; description?: string }; code?: number; }
 
 // Interfaces for Bilibili API responses
 interface BilibiliNavResponse { code?: number; data?: { isLogin?: boolean; wbi_img?: { img_url?: string; sub_url?: string } }; }
@@ -20,9 +21,11 @@ interface BilibiliPlayUrlResponse { code?: number; data?: { durl?: Array<{ url?:
 export interface NeteasePlaylist { id: number; name: string; coverUrl: string; playCount: number; trackCount: number; description: string; }
 export interface NeteaseTrack { id: number; title: string; artists: string[]; album: string; coverUrl: string; durationMs: number; source: 'netease'; }
 export interface BilibiliTrack { id: string; title: string; artists: string[]; coverUrl: string; duration: string; source: 'bilibili'; }
+interface NeteaseStream { url: string; cookie?: string; expiresAt: number; }
 
 @Injectable()
 export class MusicSourcesService {
+  private readonly neteaseStreams = new Map<string, NeteaseStream>();
   constructor(private readonly config: ConfigService) {}
 
   async createNeteaseQr(): Promise<{ key: string; qrUrl: string }> {
@@ -70,9 +73,7 @@ export class MusicSourcesService {
 
   async getNeteasePlaylists(cookie: string): Promise<NeteasePlaylist[]> {
     const base = this.neteaseBaseUrl();
-    const account = await this.request<NeteaseAccountResponse>(base, `/user/account?timestamp=${Date.now()}`, cookie);
-    const userId = account.profile?.userId ?? account.account?.id;
-    if (!userId) throw new ServiceUnavailableException('Netease account is unavailable');
+    const userId = await this.getNeteaseUserId(base, cookie);
     const result = await this.request<NeteaseUserPlaylistsResponse>(base, `/user/playlist?uid=${encodeURIComponent(String(userId))}&timestamp=${Date.now()}`, cookie);
     return (result.playlist ?? []).flatMap((item) => item.id && item.name && item.coverImgUrl ? [{
       id: item.id,
@@ -82,6 +83,24 @@ export class MusicSourcesService {
       trackCount: item.trackCount ?? 0,
       description: item.description ?? '',
     }] : []);
+  }
+  async createNeteasePlaylist(name: string, cookie: string): Promise<NeteasePlaylist> {
+    const base = this.neteaseBaseUrl();
+    await this.getNeteaseUserId(base, cookie);
+    const query = new URLSearchParams({ name: name.trim(), timestamp: String(Date.now()) });
+    const result = await this.request<NeteaseCreatePlaylistResponse>(base, `/playlist/create?${query.toString()}`, cookie);
+    const playlist = result.playlist;
+    if (result.code !== 200 || !playlist?.id || !playlist.name) {
+      throw new ServiceUnavailableException('Failed to create Netease playlist');
+    }
+    return {
+      id: playlist.id,
+      name: playlist.name,
+      coverUrl: playlist.coverImgUrl ?? '',
+      playCount: playlist.playCount ?? 0,
+      trackCount: playlist.trackCount ?? 0,
+      description: playlist.description ?? '',
+    };
   }
 
   async searchNetease(keywords: string, limit = 20, cookie?: string): Promise<NeteaseTrack[]> {
@@ -101,20 +120,37 @@ export class MusicSourcesService {
   async getNeteasePlayUrl(id: number, level = 'exhigh', cookie?: string): Promise<{ url: string; br: number }> {
     const base = this.neteaseBaseUrl();
     const levels = [...new Set([level, 'exhigh', 'higher', 'standard'])];
+    const desktopCookie = this.withNeteaseDesktopCookie(cookie);
     for (const candidate of levels) {
-      const query = new URLSearchParams({ id: String(id), level: candidate, timestamp: String(Date.now()) });
-      const result = await this.request<NeteasePlayUrlResponse>(base, `/song/url/v1?${query.toString()}`, cookie);
+      const query = new URLSearchParams({ id: String(id), level: candidate, encodeType: 'mp3', timestamp: String(Date.now()) });
+      const result = await this.request<NeteasePlayUrlResponse>(base, `/song/url/v1?${query.toString()}`, desktopCookie);
       const data = result.data?.[0];
-      if (data?.url && data.code === 200) return { url: data.url, br: data.br ?? 0 };
+      if (data?.url && data.code === 200) return this.createNeteaseStream(data.url, data.br ?? 0, desktopCookie);
     }
-    // Fallback to old endpoint
     const fallbackQuery = new URLSearchParams({ id: String(id), timestamp: String(Date.now()) });
-    const fallback = await this.request<NeteasePlayUrlResponse>(base, `/song/url?${fallbackQuery.toString()}`, cookie);
+    const fallback = await this.request<NeteasePlayUrlResponse>(base, `/song/url?${fallbackQuery.toString()}`, desktopCookie);
     const fallbackData = fallback.data?.[0];
-    if (fallbackData?.url && fallbackData.code === 200) {
-      return { url: fallbackData.url, br: fallbackData.br ?? 0 };
-    }
+    if (fallbackData?.url && fallbackData.code === 200) return this.createNeteaseStream(fallbackData.url, fallbackData.br ?? 0, desktopCookie);
     throw new ServiceUnavailableException('Failed to get Netease play URL');
+  }
+  async getNeteaseStream(token: string, range?: string): Promise<Response> {
+    const stream = this.neteaseStreams.get(token);
+    if (!stream || stream.expiresAt < Date.now()) {
+      this.neteaseStreams.delete(token);
+      throw new ServiceUnavailableException('Netease stream has expired');
+    }
+    const response = await fetch(stream.url, {
+      headers: {
+        Accept: '*/*',
+        Referer: 'https://music.163.com/',
+        'User-Agent': this.neteaseUserAgent(),
+        ...(stream.cookie ? { Cookie: stream.cookie } : {}),
+        ...(range ? { Range: range } : {}),
+      },
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!response.ok && response.status !== 206) throw new ServiceUnavailableException(`Netease stream failed: HTTP ${response.status}`);
+    return response;
   }
 
   async validateBilibiliCookie(cookie: string): Promise<{ valid: boolean }> {
@@ -196,6 +232,25 @@ export class MusicSourcesService {
     }
     const value = result.data?.cid ?? result.data?.pages?.[0]?.cid;
     return value ? String(value) : '';
+  }
+  private createNeteaseStream(url: string, br: number, cookie?: string): { url: string; br: number } {
+    const token = randomUUID();
+    this.neteaseStreams.set(token, { url, cookie, expiresAt: Date.now() + 15 * 60_000 });
+    return { url: `/music-sources/netease/stream/${token}`, br };
+  }
+  private withNeteaseDesktopCookie(cookie?: string): string {
+    const parts = (cookie ?? '').split(';').map((part) => part.trim()).filter(Boolean);
+    if (!parts.some((part) => part.startsWith('os='))) parts.push('os=pc');
+    return parts.join('; ');
+  }
+  private neteaseUserAgent(): string {
+    return 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) NeteaseMusicDesktop/2.3.17.1034';
+  }
+  private async getNeteaseUserId(base: string, cookie: string): Promise<number> {
+    const account = await this.request<NeteaseAccountResponse>(base, `/user/account?timestamp=${Date.now()}`, cookie);
+    const userId = account.profile?.userId ?? account.account?.id;
+    if (!userId) throw new ServiceUnavailableException('Netease account is unavailable');
+    return userId;
   }
   private neteaseBaseUrl(): string {
     const value = this.config.get<string>('NETEASE_API_BASE');
