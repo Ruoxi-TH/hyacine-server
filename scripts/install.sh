@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 # Ubuntu 一键安装 Docker 并部署 hyacine-server
-# 用法：
+# 用法（宝塔终端直接跑这一条）：
 #   curl -fsSL https://raw.githubusercontent.com/Ruoxi-TH/hyacine-server/master/scripts/install.sh | bash
-# 或已在仓库目录：
+# 已在仓库目录：
 #   bash scripts/install.sh
 
 set -u
 
 REPO_URL="${REPO_URL:-https://github.com/Ruoxi-TH/hyacine-server.git}"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/hyacine-server}"
+if [[ -z "${INSTALL_DIR:-}" ]]; then
+  if [[ -d /www/wwwroot ]]; then
+    INSTALL_DIR="/www/wwwroot/hyacine-server"
+  else
+    INSTALL_DIR="$HOME/hyacine-server"
+  fi
+fi
 API_PORT="${API_PORT:-3000}"
 
 log() { printf '[hyacine] %s\n' "$*"; }
