@@ -1,0 +1,21 @@
+name: Deploy to Koyeb
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+concurrency:
+  group: hyacine-server-koyeb
+  cancel-in-progress: true
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy to Koyeb
+        uses: koyeb-community/koyeb-actions@v1
+        with:
+          action: deploy
+          service: hyacine-server
+          github-push-on-success: true
