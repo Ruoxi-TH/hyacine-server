@@ -220,7 +220,7 @@ func (s *server) neteaseProfile(w http.ResponseWriter, r *http.Request) {
 			providerError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"userId": profile.UserID, "nickname": profile.Nickname, "avatarUrl": cover(profile.AvatarURL)})
+		writeJSON(w, http.StatusOK, map[string]any{"userId": profile.UserID, "nickname": profile.Nickname, "avatarUrl": httpsURL(profile.AvatarURL)})
 		return
 	}
 	data, err := s.providerGet("/user/account?timestamp="+strconv.FormatInt(time.Now().UnixMilli(), 10), body.Cookie)
@@ -247,7 +247,7 @@ func (s *server) neteaseProfile(w http.ResponseWriter, r *http.Request) {
 		providerError(w, errors.New("Netease account is unavailable"))
 		return
 	}
-	writeJSON(w, 200, map[string]any{"userId": id, "nickname": result.Profile.Nickname, "avatarUrl": cover(result.Profile.AvatarURL)})
+	writeJSON(w, 200, map[string]any{"userId": id, "nickname": result.Profile.Nickname, "avatarUrl": httpsURL(result.Profile.AvatarURL)})
 }
 func (s *server) neteaseRecommendations(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
@@ -848,6 +848,17 @@ func playlistResponse(items []netease.Playlist) []map[string]any {
 	}
 	return out
 }
+func httpsURL(v string) string {
+	v = strings.TrimSpace(v)
+	if strings.HasPrefix(v, "//") {
+		v = "https:" + v
+	}
+	if strings.HasPrefix(v, "http://") {
+		v = "https://" + strings.TrimPrefix(v, "http://")
+	}
+	return v
+}
+
 func cover(v string) string {
 	v = strings.TrimSpace(v)
 	if strings.HasPrefix(v, "//") {
