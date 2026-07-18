@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"hyacine-go-server/internal/config"
+	"hyacine-go-server/internal/stream"
 )
 
 func TestHealth(t *testing.T) {
@@ -74,5 +75,41 @@ func TestRequestBodyAcceptsNeteaseAndBilibiliIDs(t *testing.T) {
 	}
 	if bilibili.BilibiliID != "BV1xx411c7mD" || bilibili.CID != "9" {
 		t.Fatalf("unexpected Bilibili body: %#v", bilibili)
+	}
+}
+
+func TestCoverUsesHTTPSAndParam(t *testing.T) {
+	got := cover("http://p3.music.126.net/example.jpg")
+	want := "https://p3.music.126.net/example.jpg?param=400y400"
+	if got != want {
+		t.Fatalf("cover = %q, want %q", got, want)
+	}
+	if cover("https://p3.music.126.net/example.jpg?param=300y300") != "https://p3.music.126.net/example.jpg?param=300y300" {
+		t.Fatal("cover should keep existing param")
+	}
+}
+
+func TestCreateStreamResponseIsRelativeToAPIBase(t *testing.T) {
+	s := &server{streams: stream.NewStore(0)}
+	res := httptest.NewRecorder()
+	s.createStreamResponse(res, "https://m701.music.126.net/song.mp3", 128000, "MUSIC_U=1")
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d", res.Code)
+	}
+	var body struct {
+		URL string `json:"url"`
+		BR  int    `json:"br"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.BR != 128000 {
+		t.Fatalf("br = %d", body.BR)
+	}
+	if !strings.HasPrefix(body.URL, "/music-sources/netease/stream/") {
+		t.Fatalf("url = %q", body.URL)
+	}
+	if strings.HasPrefix(body.URL, "/api/v1/") {
+		t.Fatalf("url should not include /api/v1 prefix: %q", body.URL)
 	}
 }

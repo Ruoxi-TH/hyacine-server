@@ -467,7 +467,9 @@ func parseNeteasePlayURL(data []byte) (string, int) {
 
 func (s *server) createStreamResponse(w http.ResponseWriter, mediaURL string, br int, cookie string) {
 	token := s.streams.Create(mediaURL, cookie)
-	writeJSON(w, http.StatusOK, map[string]any{"url": "/api/v1/music-sources/netease/stream/" + token, "br": br})
+	// Return a path relative to /api/v1 so mobile clients that prefix apiBase
+	// do not produce /api/v1/api/v1/... stream URLs.
+	writeJSON(w, http.StatusOK, map[string]any{"url": "/music-sources/netease/stream/" + token, "br": br})
 }
 
 func (s *server) neteaseStream(w http.ResponseWriter, r *http.Request) {
@@ -842,7 +844,11 @@ func cover(v string) string {
 	if strings.HasPrefix(v, "//") {
 		v = "https:" + v
 	}
-	if strings.HasPrefix(v, "http://") || strings.HasPrefix(v, "https://") {
+	if strings.HasPrefix(v, "http://") {
+		// Android cleartext blocking commonly drops http:// music.126.net covers.
+		v = "https://" + strings.TrimPrefix(v, "http://")
+	}
+	if strings.HasPrefix(v, "https://") {
 		if strings.Contains(v, "param=") {
 			return v
 		}
