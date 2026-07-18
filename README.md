@@ -20,11 +20,10 @@ See [docs/architecture.md](docs/architecture.md) for ownership rules.
 
 ## Requirements
 
-- A compatible Netease API upstream service
-- `NETEASE_API_BASE` set to that upstream, for example `http://127.0.0.1:3001`
-- Go 1.22+ only when building from source
+- Go 1.25+ when building from source
+- Optional: `NETEASE_API_BASE` set to a compatible upstream, for example `http://127.0.0.1:3001`
 
-The provider is isolated behind `internal/music/netease.Client`. A direct WEAPI/EAPI migration based on the MIT-licensed `chaunsin/netease-cloud-music` library is prepared but not enabled: its current release requires Go 1.25, which cannot be verified on this Go 1.22 build host. The current adapter remains the compatible upstream client until the project toolchain baseline is upgraded.
+Without `NETEASE_API_BASE`, Netease playback uses the MIT-licensed `chaunsin/netease-cloud-music` Go WEAPI client directly. Each play request gets a separate upstream Cookie Jar built from the submitted music-service cookie. This prevents account cookies from being shared across users. The optional compatible upstream mode remains available for QR login, account/profile, playlists, recommendations, and search while those endpoints are migrated one by one.
 
 ## Run from source
 

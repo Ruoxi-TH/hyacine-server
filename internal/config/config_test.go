@@ -17,9 +17,13 @@ func TestLoadDefaultsPort(t *testing.T) {
 	}
 }
 
-func TestLoadRequiresNeteaseBase(t *testing.T) {
+func TestLoadAllowsDirectNeteaseMode(t *testing.T) {
 	t.Setenv("NETEASE_API_BASE", "")
-	if _, err := Load(); err == nil {
-		t.Fatal("expected configuration error")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.NeteaseAPIBase != "" {
+		t.Fatalf("base = %q", cfg.NeteaseAPIBase)
 	}
 }

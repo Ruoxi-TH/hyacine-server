@@ -19,9 +19,10 @@ import (
 )
 
 type server struct {
-	netease netease.Client
-	client  *http.Client
-	streams *stream.Store
+	netease       netease.Client
+	directNetease *netease.DirectClient
+	client        *http.Client
+	streams       *stream.Store
 }
 
 type requestBody struct {
@@ -68,7 +69,12 @@ func ListenAndServe(cfg config.Config) error {
 }
 
 func NewRouter(cfg config.Config) http.Handler {
-	s := &server{netease: netease.NewHTTPClient(cfg.NeteaseAPIBase, 10*time.Second), client: &http.Client{Timeout: 20 * time.Second}, streams: stream.NewStore(15 * time.Minute)}
+	s := &server{client: &http.Client{Timeout: 20 * time.Second}, streams: stream.NewStore(15 * time.Minute)}
+	if cfg.NeteaseAPIBase == "" {
+		s.directNetease = netease.NewDirectClient(15 * time.Second)
+	} else {
+		s.netease = netease.NewHTTPClient(cfg.NeteaseAPIBase, 10*time.Second)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/health", s.health)
 	mux.HandleFunc("/api/v1/music-sources/netease/qr", s.neteaseQR)
@@ -316,6 +322,20 @@ func (s *server) neteasePlayURL(w http.ResponseWriter, r *http.Request) {
 	}
 	cookie := desktopCookie(body.Cookie)
 	levels := []string{body.Level, "exhigh", "higher", "standard"}
+	if s.directNetease != nil {
+		for _, level := range levels {
+			if level == "" {
+				continue
+			}
+			mediaURL, br, err := s.directNetease.PlayURL(r.Context(), body.ID, level, cookie)
+			if err == nil && mediaURL != "" {
+				s.createStreamResponse(w, mediaURL, br, cookie)
+				return
+			}
+		}
+		providerError(w, errors.New("Failed to get Netease play URL"))
+		return
+	}
 	seen := make(map[string]bool)
 	for _, level := range levels {
 		if level == "" || seen[level] {
@@ -656,6 +676,9 @@ func stripHTML(s string) string {
 }
 
 func (s *server) providerGet(path, cookie string) ([]byte, error) {
+	if s.netease == nil {
+		return nil, errors.New("this Netease endpoint still requires NETEASE_API_BASE; direct mode currently supports playback")
+	}
 	return s.netease.Get(context.Background(), path, cookie)
 }
 func decodeBody(w http.ResponseWriter, r *http.Request) (requestBody, bool) {

@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"strings"
 )
@@ -18,9 +17,6 @@ func Load() (Config, error) {
 	}
 	if cfg.Port == "" {
 		cfg.Port = "3000"
-	}
-	if cfg.NeteaseAPIBase == "" {
-		return Config{}, fmt.Errorf("NETEASE_API_BASE is required until the direct Netease client migration is enabled")
 	}
 	return cfg, nil
 }
