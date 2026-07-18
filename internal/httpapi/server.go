@@ -1,11 +1,13 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"hyacine-go-server/internal/config"
+	"hyacine-go-server/internal/music/netease"
 	"hyacine-go-server/internal/stream"
 	"io"
 	"log"
@@ -17,9 +19,9 @@ import (
 )
 
 type server struct {
-	neteaseBase string
-	client      *http.Client
-	streams     *stream.Store
+	netease netease.Client
+	client  *http.Client
+	streams *stream.Store
 }
 
 type requestBody struct {
@@ -66,7 +68,7 @@ func ListenAndServe(cfg config.Config) error {
 }
 
 func NewRouter(cfg config.Config) http.Handler {
-	s := &server{neteaseBase: cfg.NeteaseAPIBase, client: &http.Client{Timeout: 20 * time.Second}, streams: stream.NewStore(15 * time.Minute)}
+	s := &server{netease: netease.NewHTTPClient(cfg.NeteaseAPIBase, 10*time.Second), client: &http.Client{Timeout: 20 * time.Second}, streams: stream.NewStore(15 * time.Minute)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/health", s.health)
 	mux.HandleFunc("/api/v1/music-sources/netease/qr", s.neteaseQR)
@@ -654,27 +656,7 @@ func stripHTML(s string) string {
 }
 
 func (s *server) providerGet(path, cookie string) ([]byte, error) {
-	req, err := http.NewRequest(http.MethodGet, s.neteaseBase+path, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	if cookie != "" {
-		req.Header.Set("Cookie", cookie)
-	}
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, errors.New("provider returned HTTP " + strconv.Itoa(resp.StatusCode))
-	}
-	return data, nil
+	return s.netease.Get(context.Background(), path, cookie)
 }
 func decodeBody(w http.ResponseWriter, r *http.Request) (requestBody, bool) {
 	if r.Method != http.MethodPost {
