@@ -4,11 +4,17 @@ on:
   push:
     branches: [go-backend-rewrite]
     paths:
-      - "go-backend/**"
+      - "**.go"
+      - "go.mod"
+      - "run.sh"
+      - "README.md"
       - ".github/workflows/build-go-backend.yml"
   pull_request:
     paths:
-      - "go-backend/**"
+      - "**.go"
+      - "go.mod"
+      - "run.sh"
+      - "README.md"
       - ".github/workflows/build-go-backend.yml"
   workflow_dispatch:
 
@@ -40,10 +46,6 @@ jobs:
             goarm: ""
             extension: .exe
 
-    defaults:
-      run:
-        working-directory: go-backend
-
     steps:
       - uses: actions/checkout@v4
 
@@ -67,6 +69,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: hyacine-go-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }}
-          path: go-backend/hyacine-go-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }}${{ matrix.extension }}
+          path: hyacine-go-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }}${{ matrix.extension }}
           if-no-files-found: error
           retention-days: 14
