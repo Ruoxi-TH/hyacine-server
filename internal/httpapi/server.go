@@ -86,6 +86,7 @@ func NewRouter(cfg config.Config) http.Handler {
 	mux.HandleFunc("/api/v1/music-sources/netease/playlists/create", s.neteaseCreatePlaylist)
 	mux.HandleFunc("/api/v1/music-sources/netease/search", s.neteaseSearch)
 	mux.HandleFunc("/api/v1/music-sources/netease/play-url", s.neteasePlayURL)
+	mux.HandleFunc("/api/v1/music-sources/netease/lyrics", s.neteaseLyrics)
 	mux.HandleFunc("/api/v1/music-sources/netease/stream/", s.neteaseStream)
 	mux.HandleFunc("/api/v1/music-sources/bilibili/validate-cookie", s.bilibiliValidateCookie)
 	mux.HandleFunc("/api/v1/music-sources/bilibili/search", s.bilibiliSearch)
@@ -115,12 +116,12 @@ func cors(next http.Handler) http.Handler {
 func (s *server) health(w http.ResponseWriter, _ *http.Request) {
 	capabilities := map[string]bool{
 		"qr": true, "profile": true, "dailySongs": true, "playlists": true,
-		"recommendations": true, "search": true, "createPlaylist": true,
+		"recommendations": true, "search": true, "createPlaylist": true, "lyrics": true,
 	}
 	if s.directNetease != nil {
 		capabilities = map[string]bool{
 			"qr": true, "profile": true, "dailySongs": true, "playlists": true,
-			"recommendations": true, "search": true, "createPlaylist": true,
+			"recommendations": true, "search": true, "createPlaylist": true, "lyrics": true,
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "timestamp": time.Now().UTC().Format(time.RFC3339), "netease": map[string]any{"direct": s.directNetease != nil, "capabilities": capabilities}})
@@ -370,6 +371,44 @@ func (s *server) neteaseDailySongs(w http.ResponseWriter, r *http.Request) {
 	_ = json.Unmarshal(data, &raw)
 	writeJSON(w, http.StatusOK, tracks(raw.Data.DailySongs))
 }
+func (s *server) neteaseLyrics(w http.ResponseWriter, r *http.Request) {
+	body, ok := decodeBody(w, r)
+	if !ok {
+		return
+	}
+	if body.ID <= 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "song id is required"})
+		return
+	}
+	if s.directNetease != nil {
+		lyrics, err := s.directNetease.Lyrics(r.Context(), body.ID, desktopCookie(body.Cookie))
+		if err != nil {
+			providerError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"lyric": lyrics.Text, "translation": lyrics.Translation})
+		return
+	}
+	data, err := s.providerGet("/lyric?id="+strconv.FormatInt(body.ID, 10), body.Cookie)
+	if err != nil {
+		providerError(w, err)
+		return
+	}
+	var raw struct {
+		Lrc struct {
+			Lyric string `json:"lyric"`
+		} `json:"lrc"`
+		TLyric struct {
+			Lyric string `json:"lyric"`
+		} `json:"tlyric"`
+	}
+	if json.Unmarshal(data, &raw) != nil {
+		providerError(w, errors.New("invalid lyric response"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"lyric": raw.Lrc.Lyric, "translation": raw.TLyric.Lyric})
+}
+
 func (s *server) neteaseSearch(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {

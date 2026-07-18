@@ -30,6 +30,10 @@ type Track struct {
 	CoverURL   string
 	DurationMS int64
 }
+type Lyrics struct {
+	Text        string
+	Translation string
+}
 type Playlist struct {
 	ID          int64
 	Name        string
@@ -101,6 +105,22 @@ func (c *DirectClient) Profile(ctx context.Context, rawCookie string) (Profile, 
 		return Profile{}, errors.New("Netease account is unavailable")
 	}
 	return Profile{UserID: response.Profile.UserId, Nickname: response.Profile.Nickname, AvatarURL: response.Profile.AvatarUrl}, nil
+}
+
+func (c *DirectClient) Lyrics(ctx context.Context, id int64, rawCookie string) (Lyrics, error) {
+	client, err := c.clientForCookie(rawCookie)
+	if err != nil {
+		return Lyrics{}, err
+	}
+	defer client.Close(ctx)
+	response, err := weapi.New(client).Lyric(ctx, &weapi.LyricReq{Id: id})
+	if err != nil {
+		return Lyrics{}, err
+	}
+	if response.Code != http.StatusOK {
+		return Lyrics{}, errors.New("Netease lyrics are unavailable")
+	}
+	return Lyrics{Text: response.Lrc.Lyric, Translation: response.TLyric.Lyric}, nil
 }
 
 func (c *DirectClient) DailySongs(ctx context.Context, rawCookie string) ([]Track, error) {
