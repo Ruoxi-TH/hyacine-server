@@ -6,5 +6,5 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 : "${PORT:=3000}"
 
 cd "$ROOT"
-go build -o hyacine-go-server .
+go build -o hyacine-go-server ./cmd/hyacine-server
 exec ./hyacine-go-server

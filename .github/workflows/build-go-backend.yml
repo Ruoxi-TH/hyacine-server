@@ -63,7 +63,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           GOARM: ${{ matrix.goarm }}
-        run: go build -trimpath -ldflags="-s -w" -o "hyacine-go-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }}${{ matrix.extension }}" .
+        run: go build -trimpath -ldflags="-s -w" -o "hyacine-go-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }}${{ matrix.extension }}" ./cmd/hyacine-server
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

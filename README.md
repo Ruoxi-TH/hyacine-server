@@ -1,6 +1,22 @@
 # Hyacine Go Backend
 
-Standalone HTTP backend for the Hyacine.music mobile client's music-source features. It is dependency-free at runtime: no Docker, Node.js, Prisma, Redis, or database is required.
+Standalone Go HTTP backend for the Hyacine.music mobile client's music-source features. It has no Docker, Node.js, Prisma, Redis, or database runtime dependency. The current release is stateless because the mobile client stores its account profile, preferences, history, and source credentials locally.
+
+## Project layout
+
+```text
+cmd/hyacine-server/       Application entry point
+internal/config/          Environment loading and validation
+internal/domain/          Shared API data models
+internal/httpapi/         Versioned routes, CORS, stream proxy, request tests
+internal/music/           Netease and Bilibili adapter boundaries
+internal/stream/          Short-lived audio stream token boundary
+internal/store/           Future server-side account/library persistence boundary
+migrations/               Future versioned SQLite migrations
+docs/                     Architecture documentation
+```
+
+See [docs/architecture.md](docs/architecture.md) for ownership rules.
 
 ## Requirements
 
