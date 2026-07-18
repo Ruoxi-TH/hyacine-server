@@ -814,11 +814,20 @@ func tracks(songs []map[string]any) []map[string]any {
 			}
 		}
 		album := ""
-		image := ""
+		image := str(s["picUrl"], "")
 		for _, key := range []string{"al", "album"} {
 			if m, ok := s[key].(map[string]any); ok {
 				album = str(m["name"], album)
-				image = str(m["picUrl"], image)
+				for _, field := range []string{"picUrl", "blurPicUrl", "pic_str"} {
+					if image == "" {
+						image = str(m[field], image)
+					}
+				}
+				if image == "" {
+					if picID := number(m["pic"]); picID > 0 {
+						image = "https://music.163.com/api/img/blob/" + strconv.FormatInt(picID, 10)
+					}
+				}
 			}
 		}
 		out = append(out, map[string]any{"id": id, "title": title, "artists": artists, "album": album, "coverUrl": cover(image), "durationMs": number(s["dt"]), "source": "netease"})

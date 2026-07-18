@@ -253,12 +253,30 @@ type song struct {
 	ID         int64  `json:"id"`
 	Name       string `json:"name"`
 	DurationMS int64  `json:"dt"`
+	PicURL     string `json:"picUrl"`
 	Album      struct {
-		PicURL string `json:"picUrl"`
+		Name       string `json:"name"`
+		PicURL     string `json:"picUrl"`
+		BlurPicURL string `json:"blurPicUrl"`
+		PicID      int64  `json:"pic"`
 	} `json:"al"`
 	Artists []struct {
 		Name string `json:"name"`
 	} `json:"ar"`
+}
+
+func (s song) coverURL() string {
+	for _, candidate := range []string{s.Album.PicURL, s.Album.BlurPicURL, s.PicURL} {
+		candidate = strings.TrimSpace(candidate)
+		if candidate != "" {
+			return candidate
+		}
+	}
+	// Fallback when cloudsearch only returns a numeric album pic id.
+	if s.Album.PicID > 0 {
+		return "https://music.163.com/api/img/blob/" + strconv.FormatInt(s.Album.PicID, 10)
+	}
+	return ""
 }
 
 func (s song) track() Track {
@@ -266,7 +284,7 @@ func (s song) track() Track {
 	for _, artist := range s.Artists {
 		artists = append(artists, artist.Name)
 	}
-	return Track{ID: s.ID, Title: s.Name, Artists: artists, CoverURL: s.Album.PicURL, DurationMS: s.DurationMS}
+	return Track{ID: s.ID, Title: s.Name, Artists: artists, CoverURL: s.coverURL(), DurationMS: s.DurationMS}
 }
 
 type playlist struct {
