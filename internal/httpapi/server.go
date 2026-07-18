@@ -107,7 +107,17 @@ func cors(next http.Handler) http.Handler {
 	})
 }
 func (s *server) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "timestamp": time.Now().UTC().Format(time.RFC3339)})
+	capabilities := map[string]bool{
+		"qr": true, "profile": true, "dailySongs": true, "playlists": true,
+		"recommendations": true, "search": true, "createPlaylist": true,
+	}
+	if s.directNetease != nil {
+		capabilities = map[string]bool{
+			"qr": false, "profile": true, "dailySongs": true, "playlists": true,
+			"recommendations": false, "search": false, "createPlaylist": false,
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "timestamp": time.Now().UTC().Format(time.RFC3339), "netease": map[string]any{"direct": s.directNetease != nil, "capabilities": capabilities}})
 }
 func (s *server) neteaseQR(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -176,6 +186,15 @@ func (s *server) neteaseProfile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if s.directNetease != nil {
+		profile, err := s.directNetease.Profile(r.Context(), desktopCookie(body.Cookie))
+		if err != nil {
+			providerError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"userId": profile.UserID, "nickname": profile.Nickname, "avatarUrl": cover(profile.AvatarURL)})
+		return
+	}
 	data, err := s.providerGet("/user/account?timestamp="+strconv.FormatInt(time.Now().UnixMilli(), 10), body.Cookie)
 	if err != nil {
 		providerError(w, err)
@@ -212,6 +231,19 @@ func (s *server) neteaseRecommendations(w http.ResponseWriter, r *http.Request) 
 func (s *server) neteasePlaylists(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {
+		return
+	}
+	if s.directNetease != nil {
+		playlists, err := s.directNetease.Playlists(r.Context(), desktopCookie(body.Cookie))
+		if err != nil {
+			providerError(w, err)
+			return
+		}
+		out := make([]map[string]any, 0, len(playlists))
+		for _, playlist := range playlists {
+			out = append(out, map[string]any{"id": playlist.ID, "name": playlist.Name, "coverUrl": cover(playlist.CoverURL), "playCount": playlist.PlayCount, "trackCount": playlist.TrackCount, "description": playlist.Description})
+		}
+		writeJSON(w, http.StatusOK, out)
 		return
 	}
 	account, err := s.providerGet("/user/account?timestamp="+strconv.FormatInt(time.Now().UnixMilli(), 10), body.Cookie)
@@ -275,6 +307,19 @@ func (s *server) neteaseDailySongs(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if s.directNetease != nil {
+		songs, err := s.directNetease.DailySongs(r.Context(), desktopCookie(body.Cookie))
+		if err != nil {
+			providerError(w, err)
+			return
+		}
+		out := make([]map[string]any, 0, len(songs))
+		for _, song := range songs {
+			out = append(out, map[string]any{"id": song.ID, "title": song.Title, "artists": song.Artists, "coverUrl": cover(song.CoverURL), "durationMs": song.DurationMS})
+		}
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
 	data, err := s.providerGet("/recommend/songs?timestamp="+strconv.FormatInt(time.Now().UnixMilli(), 10), body.Cookie)
 	if err != nil {
 		providerError(w, err)
@@ -286,7 +331,7 @@ func (s *server) neteaseDailySongs(w http.ResponseWriter, r *http.Request) {
 		} `json:"data"`
 	}
 	_ = json.Unmarshal(data, &raw)
-	writeJSON(w, 200, tracks(raw.Data.DailySongs))
+	writeJSON(w, http.StatusOK, tracks(raw.Data.DailySongs))
 }
 func (s *server) neteaseSearch(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
