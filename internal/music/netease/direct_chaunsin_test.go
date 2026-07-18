@@ -1,6 +1,23 @@
 package netease
 
-import "testing"
+import (
+	"testing"
+
+	ncmlog "github.com/chaunsin/netease-cloud-music/pkg/log"
+)
+
+func TestEnsureNeteaseLogger(t *testing.T) {
+	ncmlog.Default = nil
+	ensureNeteaseLogger()
+	if ncmlog.Default == nil {
+		t.Fatal("expected package logger to be initialized")
+	}
+	// Second call must remain idempotent.
+	ensureNeteaseLogger()
+	if ncmlog.Default == nil {
+		t.Fatal("logger was cleared after second ensure call")
+	}
+}
 
 func TestParseCookies(t *testing.T) {
 	cookies := parseCookies("MUSIC_U=token; __csrf=value; invalid")

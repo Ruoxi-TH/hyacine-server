@@ -96,6 +96,12 @@ func NewRouter(cfg config.Config) http.Handler {
 
 func cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				log.Printf("request panic recovered: %v", recovered)
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "internal server error"})
+			}
+		}()
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Range")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")

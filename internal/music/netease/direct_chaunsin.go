@@ -7,11 +7,13 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	ncmapi "github.com/chaunsin/netease-cloud-music/api"
 	"github.com/chaunsin/netease-cloud-music/api/types"
 	"github.com/chaunsin/netease-cloud-music/api/weapi"
+	ncmlog "github.com/chaunsin/netease-cloud-music/pkg/log"
 )
 
 var ErrNoPlayableURL = errors.New("Netease returned no playable URL")
@@ -46,7 +48,28 @@ type QRStatus struct {
 // third-party credentials from crossing user boundaries.
 type DirectClient struct{ timeout time.Duration }
 
-func NewDirectClient(timeout time.Duration) *DirectClient { return &DirectClient{timeout: timeout} }
+var ensureNeteaseLoggerOnce sync.Once
+
+func NewDirectClient(timeout time.Duration) *DirectClient {
+	ensureNeteaseLogger()
+	return &DirectClient{timeout: timeout}
+}
+
+// The upstream library panics if package-level log.Default is nil when Request
+// emits debug messages. Initialize a quiet stdout logger once per process.
+func ensureNeteaseLogger() {
+	ensureNeteaseLoggerOnce.Do(func() {
+		if ncmlog.Default != nil {
+			return
+		}
+		ncmlog.Default = ncmlog.New(&ncmlog.Config{
+			App:    "hyacine-server",
+			Format: "text",
+			Level:  "error",
+			Stdout: true,
+		})
+	})
+}
 
 func (c *DirectClient) PlayURL(ctx context.Context, id int64, level, rawCookie string) (string, int, error) {
 	client, err := c.clientForCookie(rawCookie)
@@ -192,14 +215,17 @@ func (c *DirectClient) CreateQR(ctx context.Context) (string, string, error) {
 	}
 	defer client.Close(ctx)
 	api := weapi.New(client)
-	key, err := api.QrcodeCreateKey(ctx, &weapi.QrcodeCreateKeyReq{Type: 1})
-	if err != nil {
-		return "", "", err
+	// Type 1 is the web client flow used by the existing mobile QR page.
+	for _, qrType := range []int64{1, 3} {
+		key, err := api.QrcodeCreateKey(ctx, &weapi.QrcodeCreateKeyReq{Type: qrType})
+		if err != nil {
+			return "", "", err
+		}
+		if key.UniKey != "" && (key.Code == 0 || key.Code == http.StatusOK) {
+			return key.UniKey, "https://music.163.com/login?codekey=" + url.QueryEscape(key.UniKey), nil
+		}
 	}
-	if key.Code != http.StatusOK || key.UniKey == "" {
-		return "", "", errors.New("Netease returned no QR key")
-	}
-	return key.UniKey, "https://music.163.com/login?codekey=" + url.QueryEscape(key.UniKey), nil
+	return "", "", errors.New("Netease returned no QR key")
 }
 
 func (c *DirectClient) CheckQR(ctx context.Context, key string) (QRStatus, error) {
@@ -287,7 +313,8 @@ func (c *DirectClient) weapiRequest(ctx context.Context, rawCookie, endpoint str
 	return err
 }
 func (c *DirectClient) clientForCookie(rawCookie string) (*ncmapi.Client, error) {
-	client, err := ncmapi.NewClient(&ncmapi.Config{Timeout: c.timeout, Retry: 1}, nil)
+	ensureNeteaseLogger()
+	client, err := ncmapi.NewClient(&ncmapi.Config{Timeout: c.timeout, Retry: 1}, ncmlog.Default)
 	if err != nil {
 		return nil, err
 	}
