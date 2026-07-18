@@ -25,9 +25,9 @@ See [docs/architecture.md](docs/architecture.md) for ownership rules.
 
 Without `NETEASE_API_BASE`, Netease playback uses the MIT-licensed `chaunsin/netease-cloud-music` Go WEAPI client directly. Each play request gets a separate upstream Cookie Jar built from the submitted music-service cookie. This prevents account cookies from being shared across users. The optional compatible upstream mode remains available for QR login, account/profile, playlists, recommendations, and search while those endpoints are migrated one by one.
 
-## Netease Reference
+## Acknowledgements
 
-Direct Netease playback is implemented with reference to [chaunsin/netease-cloud-music](https://github.com/chaunsin/netease-cloud-music), an MIT-licensed Go project. Hyacine uses only the provider capabilities needed for this backend, currently the WEAPI `SongPlayerV1` playback flow and per-request cookie handling. It does not embed or expose the reference project's CLI, download, sign-in automation, or unrelated features.
+Netease direct playback is implemented with reference to [chaunsin/netease-cloud-music](https://github.com/chaunsin/netease-cloud-music), an MIT-licensed Go project. Hyacine uses only the provider capabilities needed for this backend, currently the WEAPI `SongPlayerV1` playback flow and per-request cookie handling. It does not embed or expose the reference project's CLI, download, sign-in automation, or unrelated features.
 
 The direct path is compiled and tested locally, but real-account Cookie, CDN Range proxy, and mobile-player end-to-end playback still require separate live validation.
 
