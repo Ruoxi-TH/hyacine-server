@@ -2,34 +2,24 @@ package httpapi
 
 import (
 	"crypto/md5"
-
-	"crypto/rand"
-	"hyacine-go-server/internal/config"
-
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"hyacine-go-server/internal/config"
+	"hyacine-go-server/internal/stream"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
 type server struct {
 	neteaseBase string
 	client      *http.Client
-	streams     map[string]stream
-	mu          sync.Mutex
-}
-
-type stream struct {
-	URL     string
-	Cookie  string
-	Expires time.Time
+	streams     *stream.Store
 }
 
 type requestBody struct {
@@ -76,7 +66,7 @@ func ListenAndServe(cfg config.Config) error {
 }
 
 func NewRouter(cfg config.Config) http.Handler {
-	s := &server{neteaseBase: cfg.NeteaseAPIBase, client: &http.Client{Timeout: 20 * time.Second}, streams: make(map[string]stream)}
+	s := &server{neteaseBase: cfg.NeteaseAPIBase, client: &http.Client{Timeout: 20 * time.Second}, streams: stream.NewStore(15 * time.Minute)}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/health", s.health)
 	mux.HandleFunc("/api/v1/music-sources/netease/qr", s.neteaseQR)
@@ -363,22 +353,13 @@ func parseNeteasePlayURL(data []byte) (string, int) {
 }
 
 func (s *server) createStreamResponse(w http.ResponseWriter, mediaURL string, br int, cookie string) {
-	token := randomToken()
-	s.mu.Lock()
-	s.streams[token] = stream{URL: mediaURL, Cookie: cookie, Expires: time.Now().Add(15 * time.Minute)}
-	s.mu.Unlock()
+	token := s.streams.Create(mediaURL, cookie)
 	writeJSON(w, http.StatusOK, map[string]any{"url": "/api/v1/music-sources/netease/stream/" + token, "br": br})
 }
 
 func (s *server) neteaseStream(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimPrefix(r.URL.Path, "/api/v1/music-sources/netease/stream/")
-	s.mu.Lock()
-	item, found := s.streams[token]
-	if found && time.Now().After(item.Expires) {
-		delete(s.streams, token)
-		found = false
-	}
-	s.mu.Unlock()
+	item, found := s.streams.Get(token)
 	if !found {
 		writeJSON(w, 404, map[string]string{"message": "Netease stream has expired"})
 		return
@@ -781,7 +762,6 @@ func desktopCookie(cookie string) string {
 	}
 	return cookie
 }
-func randomToken() string { b := make([]byte, 24); _, _ = rand.Read(b); return hex.EncodeToString(b) }
 func methodNotAllowed(w http.ResponseWriter) {
 	writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"message": "method not allowed"})
 }
