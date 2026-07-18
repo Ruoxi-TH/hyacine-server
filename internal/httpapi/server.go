@@ -113,8 +113,8 @@ func (s *server) health(w http.ResponseWriter, _ *http.Request) {
 	}
 	if s.directNetease != nil {
 		capabilities = map[string]bool{
-			"qr": false, "profile": true, "dailySongs": true, "playlists": true,
-			"recommendations": false, "search": false, "createPlaylist": false,
+			"qr": true, "profile": true, "dailySongs": true, "playlists": true,
+			"recommendations": true, "search": true, "createPlaylist": true,
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "timestamp": time.Now().UTC().Format(time.RFC3339), "netease": map[string]any{"direct": s.directNetease != nil, "capabilities": capabilities}})
@@ -122,6 +122,15 @@ func (s *server) health(w http.ResponseWriter, _ *http.Request) {
 func (s *server) neteaseQR(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
+		return
+	}
+	if s.directNetease != nil {
+		key, qrURL, err := s.directNetease.CreateQR(r.Context())
+		if err != nil {
+			providerError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"key": key, "qrUrl": qrURL})
 		return
 	}
 	keyResp, err := s.providerGet("/login/qr/key?timestamp="+strconv.FormatInt(time.Now().UnixMilli(), 10), "")
@@ -160,6 +169,19 @@ func (s *server) neteaseQRPoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := strings.TrimPrefix(r.URL.Path, "/api/v1/music-sources/netease/qr/")
+	if s.directNetease != nil {
+		result, err := s.directNetease.CheckQR(r.Context(), key)
+		if err != nil {
+			providerError(w, err)
+			return
+		}
+		payload := map[string]string{"status": result.Status, "message": result.Message}
+		if result.Cookie != "" {
+			payload["cookie"] = result.Cookie
+		}
+		writeJSON(w, http.StatusOK, payload)
+		return
+	}
 	data, err := s.providerGet("/login/qr/check?key="+url.QueryEscape(key)+"&timestamp="+strconv.FormatInt(time.Now().UnixMilli(), 10), "")
 	if err != nil {
 		providerError(w, err)
@@ -224,6 +246,15 @@ func (s *server) neteaseProfile(w http.ResponseWriter, r *http.Request) {
 func (s *server) neteaseRecommendations(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {
+		return
+	}
+	if s.directNetease != nil {
+		playlists, err := s.directNetease.Recommendations(r.Context(), desktopCookie(body.Cookie))
+		if err != nil {
+			providerError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, playlistResponse(playlists))
 		return
 	}
 	s.convertPlaylists(w, "/recommend/resource?timestamp="+strconv.FormatInt(time.Now().UnixMilli(), 10), body.Cookie, "recommend")
@@ -336,6 +367,15 @@ func (s *server) neteaseDailySongs(w http.ResponseWriter, r *http.Request) {
 func (s *server) neteaseSearch(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {
+		return
+	}
+	if s.directNetease != nil {
+		results, err := s.directNetease.Search(r.Context(), body.Keywords, body.Limit, desktopCookie(body.Cookie))
+		if err != nil {
+			providerError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, trackResponse(results))
 		return
 	}
 	limit := body.Limit
@@ -466,6 +506,15 @@ func (s *server) neteaseCreatePlaylist(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(body.Name) == "" {
 		writeJSON(w, 400, map[string]string{"message": "name is required"})
+		return
+	}
+	if s.directNetease != nil {
+		playlist, err := s.directNetease.CreatePlaylist(r.Context(), body.Name, desktopCookie(body.Cookie))
+		if err != nil {
+			providerError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, playlistResponse([]netease.Playlist{playlist})[0])
 		return
 	}
 	data, err := s.providerGet("/playlist/create?name="+url.QueryEscape(body.Name)+"&timestamp="+strconv.FormatInt(time.Now().UnixMilli(), 10), body.Cookie)
@@ -765,6 +814,20 @@ func tracks(songs []map[string]any) []map[string]any {
 			}
 		}
 		out = append(out, map[string]any{"id": id, "title": title, "artists": artists, "album": album, "coverUrl": cover(image), "durationMs": number(s["dt"]), "source": "netease"})
+	}
+	return out
+}
+func trackResponse(items []netease.Track) []map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, map[string]any{"id": item.ID, "title": item.Title, "artists": item.Artists, "coverUrl": cover(item.CoverURL), "durationMs": item.DurationMS, "source": "netease"})
+	}
+	return out
+}
+func playlistResponse(items []netease.Playlist) []map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, map[string]any{"id": item.ID, "name": item.Name, "coverUrl": cover(item.CoverURL), "playCount": item.PlayCount, "trackCount": item.TrackCount, "description": item.Description})
 	}
 	return out
 }

@@ -52,8 +52,10 @@ func TestHealthDirectModeCapabilities(t *testing.T) {
 	if !body.Netease.Direct || !body.Netease.Capabilities["dailySongs"] || !body.Netease.Capabilities["playlists"] {
 		t.Fatalf("unexpected direct capabilities: %#v", body.Netease)
 	}
-	if body.Netease.Capabilities["search"] || body.Netease.Capabilities["qr"] {
-		t.Fatalf("unsupported direct capabilities were enabled: %#v", body.Netease.Capabilities)
+	for _, capability := range []string{"qr", "profile", "dailySongs", "playlists", "recommendations", "search", "createPlaylist"} {
+		if !body.Netease.Capabilities[capability] {
+			t.Fatalf("direct capability %q was disabled: %#v", capability, body.Netease.Capabilities)
+		}
 	}
 }
 
