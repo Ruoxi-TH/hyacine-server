@@ -341,6 +341,26 @@ func playlists(items []weapi.PlaylistRespList) []Playlist {
 	return out
 }
 
+func (c *DirectClient) PlaylistDetail(ctx context.Context, playlistID int64, rawCookie string) ([]Track, error) {
+	var response struct {
+		Code     int64 `json:"code"`
+		Playlist struct {
+			Tracks []song `json:"tracks"`
+		} `json:"playlist"`
+	}
+	if err := c.weapiRequest(ctx, rawCookie, "https://music.163.com/weapi/v6/playlist/detail", map[string]any{"id": playlistID, "n": 1000, "s": 8}, &response); err != nil {
+		return nil, err
+	}
+	if response.Code != http.StatusOK {
+		return nil, errors.New("Netease playlist detail is unavailable")
+	}
+	out := make([]Track, 0, len(response.Playlist.Tracks))
+	for _, item := range response.Playlist.Tracks {
+		out = append(out, item.track())
+	}
+	return out, nil
+}
+
 func (c *DirectClient) weapiRequest(ctx context.Context, rawCookie, endpoint string, request, response any) error {
 	client, err := c.clientForCookie(rawCookie)
 	if err != nil {

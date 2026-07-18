@@ -83,6 +83,7 @@ func NewRouter(cfg config.Config) http.Handler {
 	mux.HandleFunc("/api/v1/music-sources/netease/recommendations", s.neteaseRecommendations)
 	mux.HandleFunc("/api/v1/music-sources/netease/daily-songs", s.neteaseDailySongs)
 	mux.HandleFunc("/api/v1/music-sources/netease/playlists", s.neteasePlaylists)
+	mux.HandleFunc("/api/v1/music-sources/netease/playlists/detail", s.neteasePlaylistDetail)
 	mux.HandleFunc("/api/v1/music-sources/netease/playlists/create", s.neteaseCreatePlaylist)
 	mux.HandleFunc("/api/v1/music-sources/netease/search", s.neteaseSearch)
 	mux.HandleFunc("/api/v1/music-sources/netease/play-url", s.neteasePlayURL)
@@ -546,6 +547,39 @@ func (s *server) neteaseStream(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
 }
+func (s *server) neteasePlaylistDetail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		ID     int64  `json:"id"`
+		Cookie string `json:"cookie"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.ID <= 0 {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+	tracks, err := s.directNetease.PlaylistDetail(r.Context(), body.ID, desktopCookie(body.Cookie))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	out := make([]map[string]any, 0, len(tracks))
+	for _, t := range tracks {
+		artists := make([]string, 0, len(t.Artists))
+		for _, a := range t.Artists {
+			artists = append(artists, a)
+		}
+		out = append(out, map[string]any{"id": t.ID, "title": t.Title, "artists": artists, "coverUrl": cover(t.CoverURL), "durationMs": t.DurationMS})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *server) neteaseCreatePlaylist(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {
