@@ -25,10 +25,18 @@ See [docs/architecture.md](docs/architecture.md) for ownership rules.
 
 Without `NETEASE_API_BASE`, Netease playback uses the MIT-licensed `chaunsin/netease-cloud-music` Go WEAPI client directly. Each play request gets a separate upstream Cookie Jar built from the submitted music-service cookie. This prevents account cookies from being shared across users. The optional compatible upstream mode remains available for QR login, account/profile, playlists, recommendations, and search while those endpoints are migrated one by one.
 
+## Netease Reference
+
+Direct Netease playback is implemented with reference to [chaunsin/netease-cloud-music](https://github.com/chaunsin/netease-cloud-music), an MIT-licensed Go project. Hyacine uses only the provider capabilities needed for this backend, currently the WEAPI `SongPlayerV1` playback flow and per-request cookie handling. It does not embed or expose the reference project's CLI, download, sign-in automation, or unrelated features.
+
+The direct path is compiled and tested locally, but real-account Cookie, CDN Range proxy, and mobile-player end-to-end playback still require separate live validation.
+
 ## Run from source
 
 ```bash
-NETEASE_API_BASE=http://127.0.0.1:3001 PORT=3000 ./run.sh
+PORT=3000 ./run.sh
+# Optional compatibility mode for QR/profile/playlist/search endpoints:
+# NETEASE_API_BASE=http://127.0.0.1:3001 PORT=3000 ./run.sh
 ```
 
 `run.sh` compiles the current source and starts the server. To build once and run the binary directly:
@@ -53,7 +61,7 @@ For a mobile device, configure the backend URL as `http://SERVER_IP:3000`. Do no
 
 | Variable | Required | Default | Description |
 | --- | --- | --- | --- |
-| `NETEASE_API_BASE` | Yes | None | Base URL of the compatible Netease API service. |
+| `NETEASE_API_BASE` | No | None | Enables the compatible upstream mode for Netease endpoints not yet migrated to the direct Go client. |
 | `PORT` | No | `3000` | HTTP listen port. |
 
 ## Routes
