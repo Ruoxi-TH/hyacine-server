@@ -7,15 +7,17 @@ on:
       - "**.go"
       - "go.mod"
       - "run.sh"
-      - "README.md"
-      - ".github/workflows/build-go-backend.yml"
+      - "README*.md"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/release.yml"
   pull_request:
     paths:
       - "**.go"
       - "go.mod"
       - "run.sh"
-      - "README.md"
-      - ".github/workflows/build-go-backend.yml"
+      - "README*.md"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/release.yml"
   workflow_dispatch:
 
 permissions:
