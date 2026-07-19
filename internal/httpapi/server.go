@@ -86,6 +86,7 @@ func NewRouter(cfg config.Config) http.Handler {
 	mux.HandleFunc("/api/v1/music-sources/netease/playlists/detail", s.neteasePlaylistDetail)
 	mux.HandleFunc("/api/v1/music-sources/netease/playlists/create", s.neteaseCreatePlaylist)
 	mux.HandleFunc("/api/v1/music-sources/netease/playlists/delete", s.neteaseDeletePlaylist)
+	mux.HandleFunc("/api/v1/music-sources/netease/favorites/toggle", s.neteaseToggleFavorite)
 	mux.HandleFunc("/api/v1/music-sources/netease/search", s.neteaseSearch)
 	mux.HandleFunc("/api/v1/music-sources/netease/play-url", s.neteasePlayURL)
 	mux.HandleFunc("/api/v1/music-sources/netease/lyrics", s.neteaseLyrics)
@@ -673,6 +674,51 @@ func (s *server) neteaseDeletePlaylist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
+}
+
+func (s *server) neteaseToggleFavorite(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Cookie string `json:"cookie"`
+		ID     int64  `json:"id"`
+		Remove bool   `json:"remove"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID <= 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "valid song id is required"})
+		return
+	}
+	if s.directNetease == nil {
+		writeJSON(w, http.StatusNotImplemented, map[string]string{"message": "favorites require direct Netease mode"})
+		return
+	}
+	playlists, err := s.directNetease.Playlists(r.Context(), desktopCookie(body.Cookie))
+	if err != nil {
+		providerError(w, err)
+		return
+	}
+	var playlistID int64
+	for _, playlist := range playlists {
+		if playlist.Name == "收藏风堇音乐" {
+			playlistID = playlist.ID
+			break
+		}
+	}
+	if playlistID == 0 {
+		created, createErr := s.directNetease.CreatePlaylist(r.Context(), "收藏风堇音乐", desktopCookie(body.Cookie))
+		if createErr != nil {
+			providerError(w, createErr)
+			return
+		}
+		playlistID = created.ID
+	}
+	operation := "add"
+	if body.Remove {
+		operation = "del"
+	}
+	if err := s.directNetease.ManipulatePlaylistTracks(r.Context(), playlistID, body.ID, operation, desktopCookie(body.Cookie)); err != nil {
+		providerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"favorite": !body.Remove, "playlistId": playlistID})
 }
 
 func (s *server) bilibiliValidateCookie(w http.ResponseWriter, r *http.Request) {

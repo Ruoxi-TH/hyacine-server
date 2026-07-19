@@ -3,6 +3,7 @@ package netease
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -266,6 +267,23 @@ func (c *DirectClient) Recommendations(ctx context.Context, rawCookie string) ([
 		out = append(out, item.playlist())
 	}
 	return out, nil
+}
+
+func (c *DirectClient) ManipulatePlaylistTracks(ctx context.Context, playlistID, songID int64, operation, rawCookie string) error {
+	if playlistID <= 0 || songID <= 0 || (operation != "add" && operation != "del") {
+		return errors.New("invalid playlist track operation")
+	}
+	var response struct {
+		Code int64 `json:"code"`
+	}
+	payload := map[string]any{"pid": playlistID, "trackIds": fmt.Sprintf("[\"%d\"]", songID), "op": operation, "imme": "true"}
+	if err := c.weapiRequest(ctx, rawCookie, "https://music.163.com/weapi/playlist/manipulate/tracks", payload, &response); err != nil {
+		return err
+	}
+	if response.Code != http.StatusOK {
+		return errors.New("Netease playlist update is unavailable")
+	}
+	return nil
 }
 
 func (c *DirectClient) DeletePlaylist(ctx context.Context, id int64, rawCookie string) error {
