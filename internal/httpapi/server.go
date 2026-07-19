@@ -88,6 +88,7 @@ func NewRouter(cfg config.Config) http.Handler {
 	mux.HandleFunc("/api/v1/music-sources/netease/search", s.neteaseSearch)
 	mux.HandleFunc("/api/v1/music-sources/netease/play-url", s.neteasePlayURL)
 	mux.HandleFunc("/api/v1/music-sources/netease/lyrics", s.neteaseLyrics)
+	mux.HandleFunc("/api/v1/music-sources/netease/comments", s.neteaseComments)
 	mux.HandleFunc("/api/v1/music-sources/netease/stream/", s.neteaseStream)
 	mux.HandleFunc("/api/v1/music-sources/bilibili/validate-cookie", s.bilibiliValidateCookie)
 	mux.HandleFunc("/api/v1/music-sources/bilibili/search", s.bilibiliSearch)
@@ -408,6 +409,45 @@ func (s *server) neteaseLyrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"lyric": raw.Lrc.Lyric, "translation": raw.TLyric.Lyric})
+}
+
+func (s *server) neteaseComments(w http.ResponseWriter, r *http.Request) {
+	body, ok := decodeBody(w, r)
+	if !ok {
+		return
+	}
+	if body.ID <= 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "song id is required"})
+		return
+	}
+	limit := body.Limit
+	if limit <= 0 {
+		limit = 30
+	}
+	if s.directNetease != nil {
+		page, err := s.directNetease.Comments(r.Context(), body.ID, limit, 0, desktopCookie(body.Cookie))
+		if err != nil {
+			providerError(w, err)
+			return
+		}
+		items := make([]map[string]any, 0, len(page.Comments))
+		for _, item := range page.Comments {
+			items = append(items, map[string]any{"id": item.ID, "nickname": item.Nickname, "avatarUrl": cover(item.AvatarURL), "content": item.Content, "time": item.Time, "timeText": item.TimeText, "likedCount": item.LikedCount, "location": item.Location})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"total": page.Total, "more": page.More, "comments": items})
+		return
+	}
+	data, err := s.providerGet("/comment/music?id="+strconv.FormatInt(body.ID, 10)+"&limit="+strconv.Itoa(limit), body.Cookie)
+	if err != nil {
+		providerError(w, err)
+		return
+	}
+	var payload any
+	if json.Unmarshal(data, &payload) != nil {
+		providerError(w, errors.New("invalid comments response"))
+		return
+	}
+	writeJSON(w, http.StatusOK, payload)
 }
 
 func (s *server) neteaseSearch(w http.ResponseWriter, r *http.Request) {

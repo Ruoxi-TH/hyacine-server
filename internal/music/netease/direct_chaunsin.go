@@ -34,6 +34,21 @@ type Lyrics struct {
 	Text        string
 	Translation string
 }
+type Comment struct {
+	ID         int64
+	Nickname   string
+	AvatarURL  string
+	Content    string
+	Time       int64
+	TimeText   string
+	LikedCount int64
+	Location   string
+}
+type CommentsPage struct {
+	Total    int64
+	More     bool
+	Comments []Comment
+}
 type Playlist struct {
 	ID          int64
 	Name        string
@@ -121,6 +136,33 @@ func (c *DirectClient) Lyrics(ctx context.Context, id int64, rawCookie string) (
 		return Lyrics{}, errors.New("Netease lyrics are unavailable")
 	}
 	return Lyrics{Text: response.Lrc.Lyric, Translation: response.TLyric.Lyric}, nil
+}
+
+func (c *DirectClient) Comments(ctx context.Context, id int64, limit, offset int, rawCookie string) (CommentsPage, error) {
+	if limit <= 0 || limit > 60 {
+		limit = 30
+	}
+	client, err := c.clientForCookie(rawCookie)
+	if err != nil {
+		return CommentsPage{}, err
+	}
+	defer client.Close(ctx)
+	response, err := weapi.New(client).Comments(ctx, &weapi.CommentsReq{
+		ThreadId: "R_SO_4_" + strconv.FormatInt(id, 10),
+		Offset:   strconv.Itoa(offset), Limit: strconv.Itoa(limit), BeforeTime: "0",
+		CommentId: "0", ForceFlatComment: true,
+	})
+	if err != nil {
+		return CommentsPage{}, err
+	}
+	if response.Code != http.StatusOK {
+		return CommentsPage{}, errors.New("Netease comments are unavailable")
+	}
+	out := make([]Comment, 0, len(response.Comments))
+	for _, item := range response.Comments {
+		out = append(out, Comment{ID: item.CommentId, Nickname: item.User.Nickname, AvatarURL: item.User.AvatarUrl, Content: item.Content, Time: item.Time, TimeText: item.TimeStr, LikedCount: item.LikedCount, Location: item.IpLocation.Location})
+	}
+	return CommentsPage{Total: response.Total, More: response.More, Comments: out}, nil
 }
 
 func (c *DirectClient) DailySongs(ctx context.Context, rawCookie string) ([]Track, error) {
