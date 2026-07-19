@@ -268,6 +268,22 @@ func (c *DirectClient) Recommendations(ctx context.Context, rawCookie string) ([
 	return out, nil
 }
 
+func (c *DirectClient) DeletePlaylist(ctx context.Context, id int64, rawCookie string) error {
+	if id <= 0 {
+		return errors.New("playlist id is required")
+	}
+	var response struct {
+		Code int64 `json:"code"`
+	}
+	if err := c.weapiRequest(ctx, rawCookie, "https://music.163.com/weapi/playlist/delete", map[string]any{"id": id}, &response); err != nil {
+		return err
+	}
+	if response.Code != http.StatusOK {
+		return errors.New("Netease playlist deletion is unavailable")
+	}
+	return nil
+}
+
 func (c *DirectClient) CreatePlaylist(ctx context.Context, name, rawCookie string) (Playlist, error) {
 	if strings.TrimSpace(name) == "" {
 		return Playlist{}, errors.New("playlist name is required")

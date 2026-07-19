@@ -85,6 +85,7 @@ func NewRouter(cfg config.Config) http.Handler {
 	mux.HandleFunc("/api/v1/music-sources/netease/playlists", s.neteasePlaylists)
 	mux.HandleFunc("/api/v1/music-sources/netease/playlists/detail", s.neteasePlaylistDetail)
 	mux.HandleFunc("/api/v1/music-sources/netease/playlists/create", s.neteaseCreatePlaylist)
+	mux.HandleFunc("/api/v1/music-sources/netease/playlists/delete", s.neteaseDeletePlaylist)
 	mux.HandleFunc("/api/v1/music-sources/netease/search", s.neteaseSearch)
 	mux.HandleFunc("/api/v1/music-sources/netease/play-url", s.neteasePlayURL)
 	mux.HandleFunc("/api/v1/music-sources/netease/lyrics", s.neteaseLyrics)
@@ -650,6 +651,30 @@ func (s *server) neteaseCreatePlaylist(w http.ResponseWriter, r *http.Request) {
 	x := raw.Playlist
 	writeJSON(w, 201, map[string]any{"id": number(x["id"]), "name": str(x["name"], ""), "coverUrl": cover(str(x["coverImgUrl"], "")), "playCount": number(x["playCount"]), "trackCount": number(x["trackCount"]), "description": str(x["description"], "")})
 }
+func (s *server) neteaseDeletePlaylist(w http.ResponseWriter, r *http.Request) {
+	body, ok := decodeBody(w, r)
+	if !ok {
+		return
+	}
+	if body.ID <= 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "id is required"})
+		return
+	}
+	if s.directNetease != nil {
+		if err := s.directNetease.DeletePlaylist(r.Context(), body.ID, desktopCookie(body.Cookie)); err != nil {
+			providerError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
+		return
+	}
+	if _, err := s.providerGet("/playlist/delete?id="+strconv.FormatInt(body.ID, 10)+"&timestamp="+strconv.FormatInt(time.Now().UnixMilli(), 10), body.Cookie); err != nil {
+		providerError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
+}
+
 func (s *server) bilibiliValidateCookie(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {
