@@ -268,7 +268,7 @@ func (s *server) neteaseRecommendations(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusOK, playlistResponse(playlists))
 		return
 	}
-	s.convertPlaylists(w, "/recommend/resource?timestamp="+strconv.FormatInt(time.Now().UnixMilli(), 10), body.Cookie, "recommend")
+	s.convertPlaylists(w, "/top/playlist?cat=%E5%85%A8%E9%83%A8&order=hot&limit=100&offset=0&timestamp="+strconv.FormatInt(time.Now().UnixMilli(), 10), body.Cookie, "playlists")
 }
 func (s *server) neteasePlaylists(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
