@@ -1,5 +1,7 @@
 # Hyacine Server
 
+[简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md)
+
 Go HTTP backend for [风堇音乐 / Hyacine Music](https://github.com/Ruoxi-TH/Hyacine-music). The current service is stateless and does not persist mobile profiles, source credentials, favorites, or listening history.
 
 ## Implemented capabilities
@@ -85,4 +87,4 @@ Formatting and source checks are separate from deployment and real-account valid
 
 ## License
 
-See [LICENSE](LICENSE).
+This project is released under the [MIT License](LICENSE). You may use, copy, modify, merge, publish, distribute, sublicense, and sell copies of the software as permitted by the license. The software is provided without warranty.
