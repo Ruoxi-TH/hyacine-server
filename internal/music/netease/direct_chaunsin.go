@@ -262,9 +262,26 @@ func (c *DirectClient) Recommendations(ctx context.Context, rawCookie string) ([
 	if response.Code != http.StatusOK {
 		return nil, errors.New("Netease playlist recommendations are unavailable")
 	}
-	out := make([]Playlist, 0, len(response.Recommend))
+	out := make([]Playlist, 0, len(response.Recommend)+100)
+	seen := make(map[int64]struct{})
 	for _, item := range response.Recommend {
-		out = append(out, item.playlist())
+		playlist := item.playlist()
+		seen[playlist.ID] = struct{}{}
+		out = append(out, playlist)
+	}
+	var popular struct {
+		Code      int64      `json:"code"`
+		Playlists []playlist `json:"playlists"`
+	}
+	if err := c.weapiRequest(ctx, rawCookie, "https://music.163.com/weapi/playlist/list", map[string]any{"cat": "全部", "order": "hot", "limit": 100, "offset": 0, "total": true}, &popular); err == nil && popular.Code == http.StatusOK {
+		for _, item := range popular.Playlists {
+			playlist := item.playlist()
+			if _, exists := seen[playlist.ID]; exists {
+				continue
+			}
+			seen[playlist.ID] = struct{}{}
+			out = append(out, playlist)
+		}
 	}
 	return out, nil
 }
