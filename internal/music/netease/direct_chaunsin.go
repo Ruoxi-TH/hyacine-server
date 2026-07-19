@@ -290,31 +290,38 @@ func (c *DirectClient) ManipulatePlaylistTracks(ctx context.Context, playlistID,
 	if playlistID <= 0 || songID <= 0 || (operation != "add" && operation != "del") {
 		return errors.New("invalid playlist track operation")
 	}
-	var response struct {
-		Code int64 `json:"code"`
-	}
-	payload := map[string]any{"pid": playlistID, "trackIds": fmt.Sprintf("[\"%d\"]", songID), "op": operation, "imme": "true"}
-	if err := c.weapiRequest(ctx, rawCookie, "https://music.163.com/weapi/playlist/manipulate/tracks", payload, &response); err != nil {
+	client, err := c.clientForCookie(rawCookie)
+	if err != nil {
 		return err
 	}
-	if response.Code != http.StatusOK {
-		return errors.New("Netease playlist update is unavailable")
-	}
-	return nil
+	defer client.Close(ctx)
+	_, err = weapi.New(client).PlaylistAddOrDel(ctx, &weapi.PlaylistAddOrDelReq{
+		Op:       operation,
+		Pid:      playlistID,
+		TrackIds: types.IntsString{songID},
+		Imme:     true,
+	})
+	return err
 }
 
 func (c *DirectClient) DeletePlaylist(ctx context.Context, id int64, rawCookie string) error {
 	if id <= 0 {
 		return errors.New("playlist id is required")
 	}
+	client, err := c.clientForCookie(rawCookie)
+	if err != nil {
+		return err
+	}
+	defer client.Close(ctx)
 	var response struct {
 		Code int64 `json:"code"`
 	}
-	if err := c.weapiRequest(ctx, rawCookie, "https://music.163.com/weapi/playlist/delete", map[string]any{"id": id}, &response); err != nil {
+	_, err = client.Request(ctx, "https://music.163.com/weapi/playlist/delete", map[string]any{"ids": fmt.Sprintf("[%d]", id)}, &response, ncmapi.NewOptions())
+	if err != nil {
 		return err
 	}
 	if response.Code != http.StatusOK {
-		return errors.New("Netease playlist deletion is unavailable")
+		return fmt.Errorf("Netease playlist deletion returned code %d", response.Code)
 	}
 	return nil
 }
@@ -323,15 +330,21 @@ func (c *DirectClient) CreatePlaylist(ctx context.Context, name, rawCookie strin
 	if strings.TrimSpace(name) == "" {
 		return Playlist{}, errors.New("playlist name is required")
 	}
+	client, err := c.clientForCookie(rawCookie)
+	if err != nil {
+		return Playlist{}, err
+	}
+	defer client.Close(ctx)
 	var response struct {
 		Code     int64    `json:"code"`
 		Playlist playlist `json:"playlist"`
 	}
-	if err := c.weapiRequest(ctx, rawCookie, "https://music.163.com/weapi/playlist/create", map[string]any{"name": name}, &response); err != nil {
+	_, err = client.Request(ctx, "https://music.163.com/weapi/playlist/create", map[string]any{"name": name, "privacy": 0}, &response, ncmapi.NewOptions())
+	if err != nil {
 		return Playlist{}, err
 	}
 	if response.Code != http.StatusOK {
-		return Playlist{}, errors.New("Netease playlist creation is unavailable")
+		return Playlist{}, fmt.Errorf("Netease playlist creation returned code %d", response.Code)
 	}
 	return response.Playlist.playlist(), nil
 }
