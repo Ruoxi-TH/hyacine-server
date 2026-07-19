@@ -142,9 +142,24 @@ func (c *DirectClient) DailySongs(ctx context.Context, rawCookie string) ([]Trac
 		for _, artist := range song.Ar {
 			artists = append(artists, artist.Name)
 		}
-		out = append(out, Track{ID: song.Id, Title: song.Name, Artists: artists, CoverURL: song.Al.PicUrl, DurationMS: song.Dt})
+		out = append(out, Track{ID: song.Id, Title: song.Name, Artists: artists, CoverURL: dailySongCover(song.Al.PicUrl, song.Al.PicStr, song.Al.Pic), DurationMS: song.Dt})
 	}
 	return out, nil
+}
+
+// dailySongCover keeps the upstream URL when present and falls back to the
+// album image ID fields exposed by the daily-recommendations response.
+func dailySongCover(picURL, picStr string, pic int64) string {
+	if picURL = strings.TrimSpace(picURL); picURL != "" {
+		return picURL
+	}
+	if parsed, err := strconv.ParseInt(strings.TrimSpace(picStr), 10, 64); err == nil && parsed > 0 {
+		pic = parsed
+	}
+	if pic <= 0 {
+		return ""
+	}
+	return "https://music.163.com/api/img/blob/" + strconv.FormatInt(pic, 10)
 }
 
 func (c *DirectClient) Playlists(ctx context.Context, rawCookie string) ([]Playlist, error) {
