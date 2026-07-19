@@ -2,6 +2,7 @@ package netease
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -48,6 +49,9 @@ func (c *HTTPClient) Get(ctx context.Context, path, cookie string) ([]byte, erro
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, fmt.Errorf("Netease provider returned HTTP %d", resp.StatusCode)
+	}
+	if !json.Valid(body) {
+		return nil, fmt.Errorf("Netease provider returned a non-JSON response")
 	}
 	return body, nil
 }

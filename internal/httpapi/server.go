@@ -29,6 +29,7 @@ type requestBody struct {
 	Cookie     string `json:"cookie"`
 	Keywords   string `json:"keywords"`
 	Limit      int    `json:"limit"`
+	Offset     int    `json:"offset"`
 	ID         int64  `json:"-"`
 	BilibiliID string `json:"-"`
 	CID        string `json:"cid"`
@@ -42,6 +43,7 @@ func (b *requestBody) UnmarshalJSON(data []byte) error {
 		Cookie   string          `json:"cookie"`
 		Keywords string          `json:"keywords"`
 		Limit    int             `json:"limit"`
+		Offset   int             `json:"offset"`
 		ID       json.RawMessage `json:"id"`
 		CID      string          `json:"cid"`
 		Level    string          `json:"level"`
@@ -50,7 +52,7 @@ func (b *requestBody) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
-	b.Cookie, b.Keywords, b.Limit, b.CID, b.Level, b.Name = raw.Cookie, raw.Keywords, raw.Limit, raw.CID, raw.Level, raw.Name
+	b.Cookie, b.Keywords, b.Limit, b.Offset, b.CID, b.Level, b.Name = raw.Cookie, raw.Keywords, raw.Limit, raw.Offset, raw.CID, raw.Level, raw.Name
 	if len(raw.ID) == 0 || string(raw.ID) == "null" {
 		return nil
 	}
@@ -268,7 +270,14 @@ func (s *server) neteaseRecommendations(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusOK, playlistResponse(playlists))
 		return
 	}
-	s.convertPlaylists(w, "/top/playlist?cat=%E5%85%A8%E9%83%A8&order=hot&limit=100&offset=0&timestamp="+strconv.FormatInt(time.Now().UnixMilli(), 10), body.Cookie, "playlists")
+	limit, offset := body.Limit, body.Offset
+	if limit <= 0 || limit > 20 {
+		limit = 10
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	s.convertPlaylists(w, "/top/playlist?cat=%E5%85%A8%E9%83%A8&order=hot&limit="+strconv.Itoa(limit)+"&offset="+strconv.Itoa(offset)+"&timestamp="+strconv.FormatInt(time.Now().UnixMilli(), 10), body.Cookie, "playlists")
 }
 func (s *server) neteasePlaylists(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
