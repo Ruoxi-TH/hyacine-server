@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"hyacine-go-server/internal/config"
+	"hyacine-go-server/internal/httpapi"
 )
 
 var version = "dev"
