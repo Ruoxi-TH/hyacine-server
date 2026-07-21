@@ -343,15 +343,20 @@ func (c *DirectClient) CreateQR(ctx context.Context) (string, string, error) {
 	}
 	defer client.Close(ctx)
 	api := weapi.New(client)
+	var lastErr error
 	// Type 1 is the web client flow used by the existing mobile QR page.
 	for _, qrType := range []int64{1, 3} {
 		key, err := api.QrcodeCreateKey(ctx, &weapi.QrcodeCreateKeyReq{Type: qrType})
 		if err != nil {
-			return "", "", err
+			lastErr = err
+			continue
 		}
 		if key.UniKey != "" && (key.Code == 0 || key.Code == http.StatusOK) {
 			return key.UniKey, "https://music.163.com/login?codekey=" + url.QueryEscape(key.UniKey), nil
 		}
+	}
+	if lastErr != nil {
+		return "", "", fmt.Errorf("Netease QR key creation failed: %w", lastErr)
 	}
 	return "", "", errors.New("Netease returned no QR key")
 }
@@ -362,19 +367,24 @@ func (c *DirectClient) CheckQR(ctx context.Context, key string) (QRStatus, error
 		return QRStatus{}, err
 	}
 	defer client.Close(ctx)
-	response, err := weapi.New(client).QrcodeCheck(ctx, &weapi.QrcodeCheckReq{Key: key, Type: 1})
-	if err != nil {
-		return QRStatus{}, err
+	api := weapi.New(client)
+	// Try both type 1 and type 3 to match whichever CreateQR succeeded with.
+	for _, qrType := range []int64{1, 3} {
+		response, err := api.QrcodeCheck(ctx, &weapi.QrcodeCheckReq{Key: key, Type: qrType})
+		if err != nil {
+			continue
+		}
+		switch response.Code {
+		case 803:
+			uri, _ := url.Parse("https://music.163.com")
+			return QRStatus{Status: "confirmed", Cookie: cookieString(client.GetCookies(uri))}, nil
+		case 800:
+			return QRStatus{Status: "expired", Message: response.Message}, nil
+		case 801, 802:
+			return QRStatus{Status: "pending", Message: response.Message}, nil
+		}
 	}
-	switch response.Code {
-	case 803:
-		uri, _ := url.Parse("https://music.163.com")
-		return QRStatus{Status: "confirmed", Cookie: cookieString(client.GetCookies(uri))}, nil
-	case 800:
-		return QRStatus{Status: "expired", Message: response.Message}, nil
-	default:
-		return QRStatus{Status: "pending", Message: response.Message}, nil
-	}
+	return QRStatus{Status: "pending", Message: "waiting"}, nil
 }
 
 type song struct {
