@@ -26,6 +26,7 @@ type server struct {
 }
 
 type requestBody struct {
+	Offset     int    `json:"offset"`
 	Cookie     string `json:"cookie"`
 	Keywords   string `json:"keywords"`
 	Limit      int    `json:"limit"`
@@ -427,7 +428,7 @@ func (s *server) neteaseComments(w http.ResponseWriter, r *http.Request) {
 		limit = 30
 	}
 	if s.directNetease != nil {
-		page, err := s.directNetease.Comments(r.Context(), body.ID, limit, 0, desktopCookie(body.Cookie))
+		page, err := s.directNetease.Comments(r.Context(), body.ID, limit, body.Offset, desktopCookie(body.Cookie))
 		if err != nil {
 			providerError(w, err)
 			return
