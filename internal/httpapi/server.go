@@ -40,6 +40,7 @@ type requestBody struct {
 // The existing mobile client sends a numeric Netease ID and a string Bilibili BV ID.
 func (b *requestBody) UnmarshalJSON(data []byte) error {
 	var raw struct {
+		Offset   int             `json:"offset"`
 		Cookie   string          `json:"cookie"`
 		Keywords string          `json:"keywords"`
 		Limit    int             `json:"limit"`
@@ -51,7 +52,7 @@ func (b *requestBody) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
-	b.Cookie, b.Keywords, b.Limit, b.CID, b.Level, b.Name = raw.Cookie, raw.Keywords, raw.Limit, raw.CID, raw.Level, raw.Name
+	b.Offset, b.Cookie, b.Keywords, b.Limit, b.CID, b.Level, b.Name = raw.Offset, raw.Cookie, raw.Keywords, raw.Limit, raw.CID, raw.Level, raw.Name
 	if len(raw.ID) == 0 || string(raw.ID) == "null" {
 		return nil
 	}
@@ -369,6 +370,7 @@ func (s *server) neteaseDailySongs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var raw struct {
+		Offset   int             `json:"offset"`
 		Data struct {
 			DailySongs []map[string]any `json:"dailySongs"`
 		} `json:"data"`
@@ -400,6 +402,7 @@ func (s *server) neteaseLyrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var raw struct {
+		Offset   int             `json:"offset"`
 		Lrc struct {
 			Lyric string `json:"lyric"`
 		} `json:"lrc"`
@@ -478,6 +481,7 @@ func (s *server) neteaseSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var raw struct {
+		Offset   int             `json:"offset"`
 		Result struct {
 			Songs []map[string]any `json:"songs"`
 		} `json:"result"`
@@ -536,6 +540,7 @@ func (s *server) neteasePlayURL(w http.ResponseWriter, r *http.Request) {
 }
 func parseNeteasePlayURL(data []byte) (string, int) {
 	var raw struct {
+		Offset   int             `json:"offset"`
 		Data []struct {
 			URL  string `json:"url"`
 			BR   int    `json:"br"`
@@ -647,6 +652,7 @@ func (s *server) neteaseCreatePlaylist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var raw struct {
+		Offset   int             `json:"offset"`
 		Playlist map[string]any `json:"playlist"`
 	}
 	_ = json.Unmarshal(data, &raw)
@@ -770,6 +776,7 @@ func (s *server) bilibiliSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var raw struct {
+		Offset   int             `json:"offset"`
 		Code int `json:"code"`
 		Data struct {
 			Result []struct {
