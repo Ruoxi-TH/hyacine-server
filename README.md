@@ -31,6 +31,30 @@ Music-service cookies are accepted only for the duration of the corresponding re
 - `PORT` defaults to `3000`
 - `NETEASE_API_BASE` is optional
 
+### Configuration file
+
+Create `config.json` in the working directory or `/etc/hyacine/config.json`:
+
+```json
+{
+  "port": 3000,
+  "netease_api_base": "",
+  "log_level": "info",
+  "cors": {
+    "enabled": true,
+    "origins": ["*"]
+  },
+  "stream": {
+    "buffer_size": 32768,
+    "timeout": 30
+  }
+}
+```
+
+**Priority**: Environment variables > config.json > defaults
+
+### Run
+
 ```bash
 PORT=3000 ./run.sh
 curl -fsS http://127.0.0.1:3000/api/v1/health
@@ -41,8 +65,6 @@ Compatibility mode:
 ```bash
 NETEASE_API_BASE=http://127.0.0.1:3001 PORT=3000 ./run.sh
 ```
-
-Configure the App with an address reachable from the phone, such as `http://SERVER_IP:3000`; a phone cannot reach a computer backend through the phone's own `localhost`.
 
 ## Routes
 
