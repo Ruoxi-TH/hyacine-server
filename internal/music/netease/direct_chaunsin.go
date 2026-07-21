@@ -293,7 +293,7 @@ func (c *DirectClient) ManipulatePlaylistTracks(ctx context.Context, playlistID,
 	var response struct {
 		Code int64 `json:"code"`
 	}
-	payload := map[string]any{"pid": playlistID, "trackIds": fmt.Sprintf("[\"%d\"]", songID), "op": operation, "imme": "true"}
+	payload := map[string]any{"pid": playlistID, "trackIds": fmt.Sprintf("[%d]", songID), "op": operation, "imme": true}
 	if err := c.weapiRequest(ctx, rawCookie, "https://music.163.com/weapi/playlist/manipulate/tracks", payload, &response); err != nil {
 		return err
 	}
