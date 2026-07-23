@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"hyacine-go-server/internal/auth"
-	"hyacine-go-server/internal/captcha"
 	"hyacine-go-server/internal/email"
 	"hyacine-go-server/internal/store"
 	"net/http"
@@ -21,7 +20,6 @@ type EmailSender interface {
 type AuthHandler struct {
 	store       Store
 	emailSender EmailSender
-	captchaGen  *captcha.Generator
 	jwtSecret   string
 }
 
@@ -29,52 +27,12 @@ func NewAuthHandler(s Store, emailCfg email.SMTPConfig, jwtSecret string) *AuthH
 	return &AuthHandler{
 		store:       s,
 		emailSender: email.NewSender(emailCfg),
-		captchaGen:  captcha.NewGenerator(),
 		jwtSecret:   jwtSecret,
 	}
 }
 
-type CaptchaResponse struct {
-	ID    string `json:"id"`
-	Image string `json:"image"`
-}
-
-func (h *AuthHandler) GetCaptcha(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"message": "method not allowed"})
-		return
-	}
-
-	code, err := auth.GenerateCaptchaCode()
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "failed to generate captcha code"})
-		return
-	}
-
-	id, err := auth.GenerateID()
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "failed to generate captcha id"})
-		return
-	}
-
-	image, err := h.captchaGen.Generate(code)
-	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "failed to generate captcha image"})
-		return
-	}
-
-	if err := h.store.CreateCaptcha(id, code, time.Now().Add(90*time.Second)); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "failed to store captcha"})
-		return
-	}
-
-	writeJSON(w, http.StatusOK, CaptchaResponse{ID: id, Image: image})
-}
-
 type SendCodeRequest struct {
-	Email       string `json:"email"`
-	CaptchaID   string `json:"captcha_id"`
-	CaptchaCode string `json:"captcha_code"`
+	Email string `json:"email"`
 }
 
 func (h *AuthHandler) SendCode(w http.ResponseWriter, r *http.Request) {
@@ -94,18 +52,6 @@ func (h *AuthHandler) SendCode(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "email is required"})
 		return
 	}
-
-	if req.CaptchaID == "" || req.CaptchaCode == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "captcha is required"})
-		return
-	}
-
-	captcha, err := h.store.GetValidCaptcha(req.CaptchaID, strings.ToUpper(req.CaptchaCode))
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid or expired captcha"})
-		return
-	}
-	h.store.DeleteCaptcha(captcha.ID)
 
 	count, err := h.store.CountRecentEmailCodes(email, time.Now().Add(-24*time.Hour))
 	if err != nil {

@@ -36,9 +36,6 @@ type Store interface {
 	GetValidEmailCode(email, code string) (*store.EmailCode, error)
 	MarkEmailCodeUsed(id int64) error
 	CountRecentEmailCodes(email string, since time.Time) (int, error)
-	CreateCaptcha(id, code string, expiresAt time.Time) error
-	GetValidCaptcha(id, code string) (*store.Captcha, error)
-	DeleteCaptcha(id string) error
 	CleanupExpired() error
 	Stats() (map[string]int64, error)
 }
@@ -68,7 +65,6 @@ func NewRouter(cfg config.Config, store Store, smtpCfg email.SMTPConfig, jwtSecr
 
 	mux.HandleFunc("/api/v1/health", app.health)
 
-	mux.HandleFunc("/api/v1/auth/captcha", app.authHandler.GetCaptcha)
 	mux.HandleFunc("/api/v1/auth/send-code", app.authHandler.SendCode)
 	mux.HandleFunc("/api/v1/auth/register", app.authHandler.Register)
 	mux.HandleFunc("/api/v1/auth/login", app.authHandler.Login)

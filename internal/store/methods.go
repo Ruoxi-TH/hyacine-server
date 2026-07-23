@@ -136,39 +136,10 @@ func (s *Store) CountRecentEmailCodes(email string, since time.Time) (int, error
 	return count, err
 }
 
-func (s *Store) CreateCaptcha(id, code string, expiresAt time.Time) error {
-	_, err := s.db.Exec(
-		"INSERT INTO captchas (id, code, expires_at) VALUES (?, ?, ?)",
-		id, code, expiresAt,
-	)
-	return err
-}
-
-func (s *Store) GetValidCaptcha(id, code string) (*Captcha, error) {
-	c := &Captcha{}
-	err := s.db.QueryRow(
-		"SELECT id, code, expires_at, created_at FROM captchas WHERE id = ? AND code = ? AND expires_at > ?",
-		id, code, time.Now(),
-	).Scan(&c.ID, &c.Code, &c.ExpiresAt, &c.CreatedAt)
-	if err != nil {
-		return nil, err
-	}
-	return c, nil
-}
-
-func (s *Store) DeleteCaptcha(id string) error {
-	_, err := s.db.Exec("DELETE FROM captchas WHERE id = ?", id)
-	return err
-}
-
 func (s *Store) CleanupExpired() error {
 	now := time.Now()
-	_, err1 := s.db.Exec("DELETE FROM email_codes WHERE expires_at < ?", now)
-	_, err2 := s.db.Exec("DELETE FROM captchas WHERE expires_at < ?", now)
-	if err1 != nil {
-		return err1
-	}
-	return err2
+	_, err := s.db.Exec("DELETE FROM email_codes WHERE expires_at < ?", now)
+	return err
 }
 
 func (s *Store) Stats() (map[string]int64, error) {

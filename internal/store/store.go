@@ -29,13 +29,6 @@ type EmailCode struct {
 	CreatedAt string
 }
 
-type Captcha struct {
-	ID        string
-	Code      string
-	ExpiresAt string
-	CreatedAt string
-}
-
 type Store struct {
 	db *sql.DB
 }
@@ -88,13 +81,6 @@ func (s *Store) migrate() error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE INDEX IF NOT EXISTS idx_email_codes_email ON email_codes(email);
-
-		CREATE TABLE IF NOT EXISTS captchas (
-			id TEXT PRIMARY KEY,
-			code TEXT NOT NULL,
-			expires_at DATETIME NOT NULL,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		);
 	`)
 	return err
 }
