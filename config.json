@@ -1,0 +1,13 @@
+{
+  "port": 3000,
+  "netease_api_base": "",
+  "log_level": "info",
+  "cors": {
+    "enabled": true,
+    "origins": ["*"]
+  },
+  "stream": {
+    "buffer_size": 32768,
+    "timeout": 30
+  }
+}
