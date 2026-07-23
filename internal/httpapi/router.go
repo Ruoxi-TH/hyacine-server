@@ -9,6 +9,7 @@ import (
 	"hyacine-go-server/internal/stream"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -110,6 +111,10 @@ func cors(next http.Handler) http.Handler {
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
+		}
+		// 清理 Cookie 中的非法双引号字符，避免 Go 框架日志警告刷屏
+		if raw := r.Header.Get("Cookie"); raw != "" && strings.Contains(raw, `"`) {
+			r.Header.Set("Cookie", strings.ReplaceAll(raw, `"`, ""))
 		}
 		next.ServeHTTP(w, r)
 	})
