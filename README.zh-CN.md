@@ -36,6 +36,63 @@ curl -fsS http://127.0.0.1:3000/api/v1/health
 
 手机中的后端地址必须是手机能够访问的地址，例如 `http://SERVER_IP:3000`，不能填写电脑自身的 `localhost`。
 
+## 邮件服务配置
+
+后端支持发送邮件（邮箱验证码、封号通知等），需要在 `config.json` 中配置 SMTP。
+
+### 配置字段说明
+
+```json
+{
+  "smtp": {
+    "host": "SMTP服务器地址",
+    "port": 587,
+    "user": "发件邮箱账号",
+    "password": "邮箱授权码（非登录密码）",
+    "from": "显示名称 <邮箱地址>"
+  }
+}
+```
+
+### 常用邮箱服务商 SMTP 配置
+
+| 服务商 | Host | Port | 加密方式 |
+|--------|------|------|---------|
+| QQ邮箱 | smtp.qq.com | 587 | TLS |
+| 163邮箱 | smtp.163.com | 465 | SSL |
+| 阿里云邮件推送 | smtpdm.aliyun.com | 80 或 465 | TLS/SSL |
+| Gmail | smtp.gmail.com | 587 | TLS |
+
+### 获取邮箱授权码
+
+**QQ邮箱**：
+1. 登录 QQ邮箱网页版 → 设置 → 账户
+2. 开启 POP3/SMTP 服务
+3. 生成授权码（16位字母），填入 `password` 字段
+
+**163邮箱**：
+1. 登录 163邮箱 → 设置 → POP3/SMTP/IMAP
+2. 开启 SMTP 服务
+3. 获取授权码，填入 `password` 字段
+
+**阿里云邮件推送**：
+1. 登录阿里云控制台 → 邮件推送 → 发信域名
+2. 创建发信地址，获取 SMTP 账号和密码
+
+### 示例配置
+
+```json
+{
+  "smtp": {
+    "host": "smtp.qq.com",
+    "port": 587,
+    "user": "your_email@qq.com",
+    "password": "abcdefghijklmnop",
+    "from": "风堇音乐 <your_email@qq.com>"
+  }
+}
+```
+
 ## 主要路由
 
 所有路由使用 `/api/v1` 前缀。
