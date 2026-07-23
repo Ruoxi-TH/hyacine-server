@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"embed"
 	"hyacine-go-server/internal/config"
 	"hyacine-go-server/internal/email"
 	"hyacine-go-server/internal/music/netease"
@@ -10,6 +11,9 @@ import (
 	"net/http"
 	"time"
 )
+
+//go:embed templates/*
+var templatesFS embed.FS
 
 type App struct {
 	*server
@@ -47,6 +51,10 @@ func NewRouter(cfg config.Config, db *store.Store, smtpCfg email.SMTPConfig, jwt
 	}
 
 	mux := http.NewServeMux()
+
+	// Admin web UI
+	mux.HandleFunc("/admin", app.serveAdmin)
+	mux.HandleFunc("/admin/", app.serveAdmin)
 
 	mux.HandleFunc("/api/v1/health", app.health)
 

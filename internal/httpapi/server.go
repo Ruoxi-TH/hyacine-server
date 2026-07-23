@@ -8,6 +8,7 @@ import (
 	"errors"
 	"hyacine-go-server/internal/music/netease"
 	"hyacine-go-server/internal/stream"
+	"html/template"
 	"io"
 	"net/http"
 	"net/url"
@@ -1086,4 +1087,14 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func (app *App) serveAdmin(w http.ResponseWriter, r *http.Request) {
+	tmpl, err := template.ParseFS(templatesFS, "templates/admin.html")
+	if err != nil {
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = tmpl.Execute(w, nil)
 }
