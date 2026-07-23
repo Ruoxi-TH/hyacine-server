@@ -29,11 +29,12 @@ type DatabaseConfig struct {
 }
 
 type SMTPConfig struct {
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	User     string `json:"user"`
-	Password string `json:"password"`
-	From     string `json:"from"`
+	Host       string `json:"host"`
+	Port       int    `json:"port"`
+	User       string `json:"user"`
+	Password   string `json:"password"`
+	From       string `json:"from"`
+	Encryption string `json:"encryption"` // "none", "starttls", "ssl"
 }
 
 type JWTConfig struct {
