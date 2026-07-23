@@ -97,6 +97,7 @@ func NewRouter(cfg config.Config) http.Handler {
 	mux.HandleFunc("/api/v1/music-sources/bilibili/validate-cookie", s.bilibiliValidateCookie)
 	mux.HandleFunc("/api/v1/music-sources/bilibili/search", s.bilibiliSearch)
 	mux.HandleFunc("/api/v1/music-sources/bilibili/play-url", s.bilibiliPlayURL)
+	mux.HandleFunc("/api/v1/music-sources/bilibili/stream/", s.bilibiliStream)
 
 	return cors(mux)
 }
@@ -878,15 +879,49 @@ func (s *server) bilibiliPlayURL(w http.ResponseWriter, r *http.Request) {
 			media = a.BackupURL[0]
 		}
 		if media != "" {
-			writeJSON(w, 200, map[string]any{"url": media, "quality": "dash_" + strconv.Itoa(a.ID), "cid": cid})
+			token := s.streams.Create(media, body.Cookie)
+			writeJSON(w, 200, map[string]any{"url": "/api/v1/music-sources/bilibili/stream/" + token, "quality": "dash_" + strconv.Itoa(a.ID), "cid": cid, "proxied": true})
 			return
 		}
 	}
 	if len(play.Data.DURL) > 0 && play.Data.DURL[0].URL != "" {
-		writeJSON(w, 200, map[string]any{"url": play.Data.DURL[0].URL, "quality": "durl", "cid": cid})
+		token := s.streams.Create(play.Data.DURL[0].URL, body.Cookie)
+		writeJSON(w, 200, map[string]any{"url": "/api/v1/music-sources/bilibili/stream/" + token, "quality": "durl", "cid": cid, "proxied": true})
 		return
 	}
-	providerError(w, errors.New("No playable stream found for Bilibili"))
+}
+
+func (s *server) bilibiliStream(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimPrefix(r.URL.Path, "/api/v1/music-sources/bilibili/stream/")
+	item, found := s.streams.Get(token)
+	if !found {
+		writeJSON(w, 404, map[string]string{"message": "Bilibili stream has expired"})
+		return
+	}
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, item.URL, nil)
+	if err != nil {
+		providerError(w, err)
+		return
+	}
+	req.Header.Set("Referer", "https://www.bilibili.com/")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "*/*")
+	if v := r.Header.Get("Range"); v != "" {
+		req.Header.Set("Range", v)
+	}
+	resp, err := s.client.Do(req)
+	if err != nil {
+		providerError(w, err)
+		return
+	}
+	defer resp.Body.Close()
+	for _, h := range []string{"Accept-Ranges", "Content-Length", "Content-Range", "Content-Type"} {
+		if v := resp.Header.Get(h); v != "" {
+			w.Header().Set(h, v)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
 }
 
 func bilibiliGet(path, cookie string) ([]byte, error) {
