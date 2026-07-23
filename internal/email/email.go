@@ -45,8 +45,8 @@ func (s *Sender) Send(to, subject, body string) error {
 		encryption = "starttls"
 	}
 
-	if encryption == "ssl" {
-		return s.sendSSL(addr, auth, from, to, msg)
+	if encryption == "tls" {
+		return s.sendTLS(addr, auth, from, to, msg)
 	}
 	return s.sendSTARTTLS(addr, auth, from, to, msg)
 }
@@ -96,7 +96,7 @@ func (s *Sender) sendSTARTTLS(addr string, auth smtp.Auth, from, to, msg string)
 	return client.Quit()
 }
 
-func (s *Sender) sendSSL(addr string, auth smtp.Auth, from, to, msg string) error {
+func (s *Sender) sendTLS(addr string, auth smtp.Auth, from, to, msg string) error {
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: false,
 		ServerName:         s.config.Host,
