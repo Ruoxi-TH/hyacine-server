@@ -6,11 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"hyacine-go-server/internal/config"
 	"hyacine-go-server/internal/music/netease"
 	"hyacine-go-server/internal/stream"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -37,7 +35,6 @@ type requestBody struct {
 	Name       string `json:"name"`
 }
 
-// The existing mobile client sends a numeric Netease ID and a string Bilibili BV ID.
 func (b *requestBody) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Offset   int             `json:"offset"`
@@ -65,61 +62,6 @@ func (b *requestBody) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func ListenAndServe(cfg config.Config) error {
-	log.Printf("Hyacine Go server listening on :%s", cfg.Port)
-	return http.ListenAndServe(":"+cfg.Port, NewRouter(cfg))
-}
-
-func NewRouter(cfg config.Config) http.Handler {
-	s := &server{client: &http.Client{Timeout: 20 * time.Second}, streams: stream.NewStore(15 * time.Minute)}
-	if cfg.NeteaseAPIBase == "" {
-		s.directNetease = netease.NewDirectClient(15 * time.Second)
-	} else {
-		s.netease = netease.NewHTTPClient(cfg.NeteaseAPIBase, 10*time.Second)
-	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/health", s.health)
-	mux.HandleFunc("/api/v1/music-sources/netease/qr", s.neteaseQR)
-	mux.HandleFunc("/api/v1/music-sources/netease/qr/", s.neteaseQRPoll)
-	mux.HandleFunc("/api/v1/music-sources/netease/profile", s.neteaseProfile)
-	mux.HandleFunc("/api/v1/music-sources/netease/recommendations", s.neteaseRecommendations)
-	mux.HandleFunc("/api/v1/music-sources/netease/daily-songs", s.neteaseDailySongs)
-	mux.HandleFunc("/api/v1/music-sources/netease/playlists", s.neteasePlaylists)
-	mux.HandleFunc("/api/v1/music-sources/netease/playlists/detail", s.neteasePlaylistDetail)
-	mux.HandleFunc("/api/v1/music-sources/netease/playlists/create", s.neteaseCreatePlaylist)
-	mux.HandleFunc("/api/v1/music-sources/netease/playlists/delete", s.neteaseDeletePlaylist)
-	mux.HandleFunc("/api/v1/music-sources/netease/favorites/toggle", s.neteaseToggleFavorite)
-	mux.HandleFunc("/api/v1/music-sources/netease/search", s.neteaseSearch)
-	mux.HandleFunc("/api/v1/music-sources/netease/play-url", s.neteasePlayURL)
-	mux.HandleFunc("/api/v1/music-sources/netease/lyrics", s.neteaseLyrics)
-	mux.HandleFunc("/api/v1/music-sources/netease/comments", s.neteaseComments)
-	mux.HandleFunc("/api/v1/music-sources/netease/stream/", s.neteaseStream)
-	mux.HandleFunc("/api/v1/music-sources/bilibili/validate-cookie", s.bilibiliValidateCookie)
-	mux.HandleFunc("/api/v1/music-sources/bilibili/search", s.bilibiliSearch)
-	mux.HandleFunc("/api/v1/music-sources/bilibili/play-url", s.bilibiliPlayURL)
-	mux.HandleFunc("/api/v1/music-sources/bilibili/stream/", s.bilibiliStream)
-
-	return cors(mux)
-}
-
-func cors(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				log.Printf("request panic recovered: %v", recovered)
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "internal server error"})
-			}
-		}()
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Range")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
 func (s *server) health(w http.ResponseWriter, _ *http.Request) {
 	capabilities := map[string]bool{
 		"qr": true, "profile": true, "dailySongs": true, "playlists": true,
@@ -1138,7 +1080,6 @@ func methodNotAllowed(w http.ResponseWriter) {
 	writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"message": "method not allowed"})
 }
 func providerError(w http.ResponseWriter, err error) {
-	log.Printf("provider error: %v", err)
 	writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": err.Error()})
 }
 func writeJSON(w http.ResponseWriter, status int, payload any) {

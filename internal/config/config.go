@@ -23,23 +23,43 @@ type StreamConfig struct {
 	Timeout    int `json:"timeout"`
 }
 
+type DatabaseConfig struct {
+	Type string `json:"type"`
+	Path string `json:"path"`
+}
+
+type SMTPConfig struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	User     string `json:"user"`
+	Password string `json:"password"`
+	From     string `json:"from"`
+}
+
+type JWTConfig struct {
+	Secret      string `json:"secret"`
+	AccessTTL   string `json:"access_ttl"`
+	RefreshTTL  string `json:"refresh_ttl"`
+}
+
 type FileConfig struct {
-	Port           string       `json:"port"`
-	NeteaseAPIBase string       `json:"netease_api_base"`
-	LogLevel       string       `json:"log_level"`
-	CORS           CORSConfig   `json:"cors"`
-	Stream         StreamConfig `json:"stream"`
+	Port           string         `json:"port"`
+	NeteaseAPIBase string         `json:"netease_api_base"`
+	LogLevel       string         `json:"log_level"`
+	CORS           CORSConfig     `json:"cors"`
+	Stream         StreamConfig   `json:"stream"`
+	Database       DatabaseConfig `json:"database"`
+	SMTP           SMTPConfig     `json:"smtp"`
+	JWT            JWTConfig      `json:"jwt"`
 }
 
 func Load() (Config, error) {
-	// 先尝试从配置文件加载
 	fileCfg, err := loadFromFile()
 	if err == nil {
 		cfg := Config{
 			Port:           fileCfg.Port,
 			NeteaseAPIBase: strings.TrimRight(fileCfg.NeteaseAPIBase, "/"),
 		}
-		// 环境变量优先级更高
 		if envPort := strings.TrimSpace(os.Getenv("PORT")); envPort != "" {
 			cfg.Port = envPort
 		}
@@ -52,7 +72,6 @@ func Load() (Config, error) {
 		return cfg, nil
 	}
 
-	// 回退到环境变量
 	cfg := Config{
 		Port:           strings.TrimSpace(os.Getenv("PORT")),
 		NeteaseAPIBase: strings.TrimRight(strings.TrimSpace(os.Getenv("NETEASE_API_BASE")), "/"),
@@ -64,7 +83,6 @@ func Load() (Config, error) {
 }
 
 func loadFromFile() (*FileConfig, error) {
-	// 按优先级查找配置文件
 	configPaths := []string{
 		"./config.json",
 		"/etc/hyacine/config.json",
@@ -93,7 +111,6 @@ func loadFromFile() (*FileConfig, error) {
 	return nil, os.ErrNotExist
 }
 
-// LoadFileConfig 加载完整配置（包含 CORS、Stream 等高级选项）
 func LoadFileConfig() (*FileConfig, error) {
 	return loadFromFile()
 }
