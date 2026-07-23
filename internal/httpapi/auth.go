@@ -57,7 +57,7 @@ func (h *AuthHandler) GetCaptcha(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.CreateCaptcha(id, code, time.Now().Add(5*time.Minute)); err != nil {
+	if err := h.store.CreateCaptcha(id, code, time.Now().Add(90*time.Second)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "failed to store captcha"})
 		return
 	}
