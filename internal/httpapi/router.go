@@ -4,6 +4,7 @@ import (
 	"hyacine-go-server/internal/config"
 	"hyacine-go-server/internal/email"
 	"hyacine-go-server/internal/music/netease"
+	"hyacine-go-server/internal/store"
 	"hyacine-go-server/internal/stream"
 	"log"
 	"net/http"
@@ -22,52 +23,24 @@ type App struct {
 }
 
 type Store interface {
-	CreateUser(username, email, hashedPassword string) (*User, error)
-	GetUserByID(id int64) (*User, error)
-	GetUserByEmail(email string) (*User, error)
-	GetUserByUsername(username string) (*User, error)
-	ListUsers(offset, limit int) ([]User, int, error)
+	CreateUser(username, email, hashedPassword string) (*store.User, error)
+	GetUserByID(id int64) (*store.User, error)
+	GetUserByEmail(email string) (*store.User, error)
+	GetUserByUsername(username string) (*store.User, error)
+	ListUsers(offset, limit int) ([]store.User, int, error)
 	UpdateUserRole(id int64, role string) error
 	BanUser(id int64, reason string) error
 	UnbanUser(id int64) error
 	DeleteUser(id int64) error
 	CreateEmailCode(email, code string, expiresAt time.Time) error
-	GetValidEmailCode(email, code string) (*EmailCode, error)
+	GetValidEmailCode(email, code string) (*store.EmailCode, error)
 	MarkEmailCodeUsed(id int64) error
 	CountRecentEmailCodes(email string, since time.Time) (int, error)
 	CreateCaptcha(id, code string, expiresAt time.Time) error
-	GetValidCaptcha(id, code string) (*Captcha, error)
+	GetValidCaptcha(id, code string) (*store.Captcha, error)
 	DeleteCaptcha(id string) error
 	CleanupExpired() error
 	Stats() (map[string]int64, error)
-}
-
-type User struct {
-	ID        int64
-	Username  string
-	Email     string
-	Password  string
-	Role      string
-	Banned    bool
-	BanReason string
-	CreatedAt string
-	UpdatedAt string
-}
-
-type EmailCode struct {
-	ID        int64
-	Email     string
-	Code      string
-	ExpiresAt string
-	Used      bool
-	CreatedAt string
-}
-
-type Captcha struct {
-	ID        string
-	Code      string
-	ExpiresAt string
-	CreatedAt string
 }
 
 func ListenAndServe(cfg config.Config, store Store, smtpCfg email.SMTPConfig, jwtSecret string) error {

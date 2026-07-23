@@ -6,9 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"hyacine-go-server/internal/config"
 	"hyacine-go-server/internal/music/netease"
-	"hyacine-go-server/internal/stream"
 	"io"
 	"log"
 	"net/http"
@@ -17,13 +15,6 @@ import (
 	"strings"
 	"time"
 )
-
-type server struct {
-	netease       netease.Client
-	directNetease *netease.DirectClient
-	client        *http.Client
-	streams       *stream.Store
-}
 
 type requestBody struct {
 	Offset     int    `json:"offset"`
@@ -65,62 +56,7 @@ func (b *requestBody) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func ListenAndServe(cfg config.Config) error {
-	log.Printf("Hyacine Go server listening on :%s", cfg.Port)
-	return http.ListenAndServe(":"+cfg.Port, NewRouter(cfg))
-}
-
-func NewRouter(cfg config.Config) http.Handler {
-	s := &server{client: &http.Client{Timeout: 20 * time.Second}, streams: stream.NewStore(15 * time.Minute)}
-	if cfg.NeteaseAPIBase == "" {
-		s.directNetease = netease.NewDirectClient(15 * time.Second)
-	} else {
-		s.netease = netease.NewHTTPClient(cfg.NeteaseAPIBase, 10*time.Second)
-	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/health", s.health)
-	mux.HandleFunc("/api/v1/music-sources/netease/qr", s.neteaseQR)
-	mux.HandleFunc("/api/v1/music-sources/netease/qr/", s.neteaseQRPoll)
-	mux.HandleFunc("/api/v1/music-sources/netease/profile", s.neteaseProfile)
-	mux.HandleFunc("/api/v1/music-sources/netease/recommendations", s.neteaseRecommendations)
-	mux.HandleFunc("/api/v1/music-sources/netease/daily-songs", s.neteaseDailySongs)
-	mux.HandleFunc("/api/v1/music-sources/netease/playlists", s.neteasePlaylists)
-	mux.HandleFunc("/api/v1/music-sources/netease/playlists/detail", s.neteasePlaylistDetail)
-	mux.HandleFunc("/api/v1/music-sources/netease/playlists/create", s.neteaseCreatePlaylist)
-	mux.HandleFunc("/api/v1/music-sources/netease/playlists/delete", s.neteaseDeletePlaylist)
-	mux.HandleFunc("/api/v1/music-sources/netease/favorites/toggle", s.neteaseToggleFavorite)
-	mux.HandleFunc("/api/v1/music-sources/netease/search", s.neteaseSearch)
-	mux.HandleFunc("/api/v1/music-sources/netease/play-url", s.neteasePlayURL)
-	mux.HandleFunc("/api/v1/music-sources/netease/lyrics", s.neteaseLyrics)
-	mux.HandleFunc("/api/v1/music-sources/netease/comments", s.neteaseComments)
-	mux.HandleFunc("/api/v1/music-sources/netease/stream/", s.neteaseStream)
-	mux.HandleFunc("/api/v1/music-sources/bilibili/validate-cookie", s.bilibiliValidateCookie)
-	mux.HandleFunc("/api/v1/music-sources/bilibili/search", s.bilibiliSearch)
-	mux.HandleFunc("/api/v1/music-sources/bilibili/play-url", s.bilibiliPlayURL)
-	mux.HandleFunc("/api/v1/music-sources/bilibili/stream/", s.bilibiliStream)
-
-	return cors(mux)
-}
-
-func cors(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				log.Printf("request panic recovered: %v", recovered)
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "internal server error"})
-			}
-		}()
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Range")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-func (s *server) health(w http.ResponseWriter, _ *http.Request) {
+func (s *App) health(w http.ResponseWriter, _ *http.Request) {
 	capabilities := map[string]bool{
 		"qr": true, "profile": true, "dailySongs": true, "playlists": true,
 		"recommendations": true, "search": true, "createPlaylist": true, "lyrics": true,
@@ -133,7 +69,7 @@ func (s *server) health(w http.ResponseWriter, _ *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "timestamp": time.Now().UTC().Format(time.RFC3339), "netease": map[string]any{"direct": s.directNetease != nil, "capabilities": capabilities}})
 }
-func (s *server) neteaseQR(w http.ResponseWriter, r *http.Request) {
+func (s *App) neteaseQR(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
 		return
@@ -177,7 +113,7 @@ func (s *server) neteaseQR(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"key": key.Data.Unikey, "qrUrl": qr.Data.QRURL})
 }
-func (s *server) neteaseQRPoll(w http.ResponseWriter, r *http.Request) {
+func (s *App) neteaseQRPoll(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
 		return
@@ -217,7 +153,7 @@ func (s *server) neteaseQRPoll(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]string{"status": "pending", "message": result.Message})
 }
-func (s *server) neteaseProfile(w http.ResponseWriter, r *http.Request) {
+func (s *App) neteaseProfile(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {
 		return
@@ -257,7 +193,7 @@ func (s *server) neteaseProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{"userId": id, "nickname": result.Profile.Nickname, "avatarUrl": httpsURL(result.Profile.AvatarURL)})
 }
-func (s *server) neteaseRecommendations(w http.ResponseWriter, r *http.Request) {
+func (s *App) neteaseRecommendations(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {
 		return
@@ -273,7 +209,7 @@ func (s *server) neteaseRecommendations(w http.ResponseWriter, r *http.Request) 
 	}
 	s.convertPlaylists(w, "/top/playlist?cat=%E5%85%A8%E9%83%A8&order=hot&limit=100&offset=0&timestamp="+strconv.FormatInt(time.Now().UnixMilli(), 10), body.Cookie, "playlists")
 }
-func (s *server) neteasePlaylists(w http.ResponseWriter, r *http.Request) {
+func (s *App) neteasePlaylists(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {
 		return
@@ -315,7 +251,7 @@ func (s *server) neteasePlaylists(w http.ResponseWriter, r *http.Request) {
 	}
 	s.convertPlaylists(w, "/user/playlist?uid="+strconv.FormatInt(id, 10)+"&timestamp="+strconv.FormatInt(time.Now().UnixMilli(), 10), body.Cookie, "playlist")
 }
-func (s *server) convertPlaylists(w http.ResponseWriter, path, cookie, key string) {
+func (s *App) convertPlaylists(w http.ResponseWriter, path, cookie, key string) {
 	data, err := s.providerGet(path, cookie)
 	if err != nil {
 		providerError(w, err)
@@ -347,7 +283,7 @@ func (s *server) convertPlaylists(w http.ResponseWriter, path, cookie, key strin
 	}
 	writeJSON(w, 200, out)
 }
-func (s *server) neteaseDailySongs(w http.ResponseWriter, r *http.Request) {
+func (s *App) neteaseDailySongs(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {
 		return
@@ -379,7 +315,7 @@ func (s *server) neteaseDailySongs(w http.ResponseWriter, r *http.Request) {
 	_ = json.Unmarshal(data, &raw)
 	writeJSON(w, http.StatusOK, tracks(raw.Data.DailySongs))
 }
-func (s *server) neteaseLyrics(w http.ResponseWriter, r *http.Request) {
+func (s *App) neteaseLyrics(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {
 		return
@@ -418,7 +354,7 @@ func (s *server) neteaseLyrics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"lyric": raw.Lrc.Lyric, "translation": raw.TLyric.Lyric})
 }
 
-func (s *server) neteaseComments(w http.ResponseWriter, r *http.Request) {
+func (s *App) neteaseComments(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {
 		return
@@ -457,7 +393,7 @@ func (s *server) neteaseComments(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, payload)
 }
 
-func (s *server) neteaseSearch(w http.ResponseWriter, r *http.Request) {
+func (s *App) neteaseSearch(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {
 		return
@@ -490,7 +426,7 @@ func (s *server) neteaseSearch(w http.ResponseWriter, r *http.Request) {
 	_ = json.Unmarshal(data, &raw)
 	writeJSON(w, 200, tracks(raw.Result.Songs))
 }
-func (s *server) neteasePlayURL(w http.ResponseWriter, r *http.Request) {
+func (s *App) neteasePlayURL(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {
 		return
@@ -554,14 +490,14 @@ func parseNeteasePlayURL(data []byte) (string, int) {
 	return raw.Data[0].URL, raw.Data[0].BR
 }
 
-func (s *server) createStreamResponse(w http.ResponseWriter, mediaURL string, br int, cookie string) {
+func (s *App) createStreamResponse(w http.ResponseWriter, mediaURL string, br int, cookie string) {
 	token := s.streams.Create(mediaURL, cookie)
 	// Return a path relative to /api/v1 so mobile clients that prefix apiBase
 	// do not produce /api/v1/api/v1/... stream URLs.
 	writeJSON(w, http.StatusOK, map[string]any{"url": "/music-sources/netease/stream/" + token, "br": br})
 }
 
-func (s *server) neteaseStream(w http.ResponseWriter, r *http.Request) {
+func (s *App) neteaseStream(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimPrefix(r.URL.Path, "/api/v1/music-sources/netease/stream/")
 	item, found := s.streams.Get(token)
 	if !found {
@@ -596,7 +532,7 @@ func (s *server) neteaseStream(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
 }
-func (s *server) neteasePlaylistDetail(w http.ResponseWriter, r *http.Request) {
+func (s *App) neteasePlaylistDetail(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -629,7 +565,7 @@ func (s *server) neteasePlaylistDetail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *server) neteaseCreatePlaylist(w http.ResponseWriter, r *http.Request) {
+func (s *App) neteaseCreatePlaylist(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {
 		return
@@ -660,7 +596,7 @@ func (s *server) neteaseCreatePlaylist(w http.ResponseWriter, r *http.Request) {
 	x := raw.Playlist
 	writeJSON(w, 201, map[string]any{"id": number(x["id"]), "name": str(x["name"], ""), "coverUrl": cover(str(x["coverImgUrl"], "")), "playCount": number(x["playCount"]), "trackCount": number(x["trackCount"]), "description": str(x["description"], "")})
 }
-func (s *server) neteaseDeletePlaylist(w http.ResponseWriter, r *http.Request) {
+func (s *App) neteaseDeletePlaylist(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {
 		return
@@ -684,7 +620,7 @@ func (s *server) neteaseDeletePlaylist(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"deleted": true})
 }
 
-func (s *server) neteaseToggleFavorite(w http.ResponseWriter, r *http.Request) {
+func (s *App) neteaseToggleFavorite(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Cookie string `json:"cookie"`
 		ID     int64  `json:"id"`
@@ -729,7 +665,7 @@ func (s *server) neteaseToggleFavorite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"favorite": !body.Remove, "playlistId": playlistID})
 }
 
-func (s *server) bilibiliValidateCookie(w http.ResponseWriter, r *http.Request) {
+func (s *App) bilibiliValidateCookie(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {
 		return
@@ -753,7 +689,7 @@ func (s *server) bilibiliValidateCookie(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]bool{"valid": result.Code == 0 && result.Data.IsLogin})
 }
 
-func (s *server) bilibiliSearch(w http.ResponseWriter, r *http.Request) {
+func (s *App) bilibiliSearch(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {
 		return
@@ -813,7 +749,7 @@ func (s *server) bilibiliSearch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *server) bilibiliPlayURL(w http.ResponseWriter, r *http.Request) {
+func (s *App) bilibiliPlayURL(w http.ResponseWriter, r *http.Request) {
 	body, ok := decodeBody(w, r)
 	if !ok {
 		return
@@ -891,7 +827,7 @@ func (s *server) bilibiliPlayURL(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *server) bilibiliStream(w http.ResponseWriter, r *http.Request) {
+func (s *App) bilibiliStream(w http.ResponseWriter, r *http.Request) {
 	token := strings.TrimPrefix(r.URL.Path, "/api/v1/music-sources/bilibili/stream/")
 	item, found := s.streams.Get(token)
 	if !found {
@@ -1004,7 +940,7 @@ func stripHTML(s string) string {
 	}
 }
 
-func (s *server) providerGet(path, cookie string) ([]byte, error) {
+func (s *App) providerGet(path, cookie string) ([]byte, error) {
 	if s.netease == nil {
 		return nil, errors.New("this Netease endpoint still requires NETEASE_API_BASE; direct mode currently supports playback")
 	}

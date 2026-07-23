@@ -12,6 +12,12 @@ import (
 	"time"
 )
 
+type EmailSender interface {
+	SendVerificationCode(to, code string) error
+	SendBanNotification(to, reason string) error
+	SendUnbanNotification(to string) error
+}
+
 type AuthHandler struct {
 	store       Store
 	emailSender EmailSender

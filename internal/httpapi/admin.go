@@ -9,17 +9,12 @@ import (
 )
 
 type AdminHandler struct {
-	store Store
-	email EmailSender
-}
-
-type EmailSender interface {
-	SendBanNotification(to, reason string) error
-	SendUnbanNotification(to string) error
+	store       Store
+	emailSender EmailSender
 }
 
 func NewAdminHandler(s Store, email EmailSender) *AdminHandler {
-	return &AdminHandler{store: s, email: email}
+	return &AdminHandler{store: s, emailSender: email}
 }
 
 func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
@@ -96,7 +91,7 @@ func (h *AdminHandler) BanUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.email.SendBanNotification(user.Email, reason)
+	h.emailSender.SendBanNotification(user.Email, reason)
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "user banned successfully"})
 }
@@ -131,7 +126,7 @@ func (h *AdminHandler) UnbanUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.email.SendUnbanNotification(user.Email)
+	h.emailSender.SendUnbanNotification(user.Email)
 
 	writeJSON(w, http.StatusOK, map[string]string{"message": "user unbanned successfully"})
 }
