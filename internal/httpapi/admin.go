@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"hyacine-go-server/internal/config"
 	"hyacine-go-server/internal/store"
 	"net/http"
 	"strconv"
@@ -222,6 +223,74 @@ func (h *AdminHandler) Stats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, stats)
+}
+
+func (h *AdminHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"message": "method not allowed"})
+		return
+	}
+
+	cfg, err := config.LoadFileConfig()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "failed to load config"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"smtp": map[string]interface{}{
+			"host":     cfg.SMTP.Host,
+			"port":     cfg.SMTP.Port,
+			"user":     cfg.SMTP.User,
+			"from":     cfg.SMTP.From,
+			"has_password": cfg.SMTP.Password != "",
+		},
+	})
+}
+
+func (h *AdminHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"message": "method not allowed"})
+		return
+	}
+
+	var req struct {
+		SMTP struct {
+			Host     string `json:"host"`
+			Port     int    `json:"port"`
+			User     string `json:"user"`
+			Password string `json:"password"`
+			From     string `json:"from"`
+		} `json:"smtp"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid request body"})
+		return
+	}
+
+	cfg, err := config.LoadFileConfig()
+	if err != nil {
+		cfg = &config.FileConfig{
+			Port:     "3000",
+			LogLevel: "info",
+		}
+	}
+
+	cfg.SMTP.Host = req.SMTP.Host
+	cfg.SMTP.Port = req.SMTP.Port
+	cfg.SMTP.User = req.SMTP.User
+	cfg.SMTP.From = req.SMTP.From
+	if req.SMTP.Password != "" {
+		cfg.SMTP.Password = req.SMTP.Password
+	}
+
+	if err := config.SaveFileConfig(cfg); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "failed to save config"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "config updated"})
 }
 
 func IsAdmin(user *store.User) bool {

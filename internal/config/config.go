@@ -114,3 +114,33 @@ func loadFromFile() (*FileConfig, error) {
 func LoadFileConfig() (*FileConfig, error) {
 	return loadFromFile()
 }
+
+func SaveFileConfig(cfg *FileConfig) error {
+	configPaths := []string{
+		"./config.json",
+		"/etc/hyacine/config.json",
+	}
+
+	execPath, _ := os.Executable()
+	execDir := filepath.Dir(execPath)
+	configPaths = append(configPaths,
+		filepath.Join(execDir, "config.json"),
+	)
+
+	for _, path := range configPaths {
+		if _, err := os.Stat(path); err == nil {
+			data, err := json.MarshalIndent(cfg, "", "  ")
+			if err != nil {
+				return err
+			}
+			return os.WriteFile(path, data, 0644)
+		}
+	}
+
+	path := "./config.json"
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}

@@ -62,6 +62,8 @@ func NewRouter(cfg config.Config, db *store.Store, smtpCfg email.SMTPConfig, jwt
 	mux.HandleFunc("/api/v1/admin/users/delete", app.adminHandler.DeleteUser)
 	mux.HandleFunc("/api/v1/admin/users/promote", app.adminHandler.PromoteUser)
 	mux.HandleFunc("/api/v1/admin/stats", app.adminHandler.Stats)
+	mux.HandleFunc("/api/v1/admin/config", app.adminHandler.GetConfig)
+	mux.HandleFunc("/api/v1/admin/config/update", app.adminHandler.UpdateConfig)
 
 	mux.HandleFunc("/api/v1/music-sources/netease/qr", app.neteaseQR)
 	mux.HandleFunc("/api/v1/music-sources/netease/qr/", app.neteaseQRPoll)
