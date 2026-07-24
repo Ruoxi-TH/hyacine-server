@@ -12,7 +12,7 @@ import (
 )
 
 type App struct {
-	cfg           config.Config
+	cfg           *config.FileConfig
 	store         Store
 	authHandler   *AuthHandler
 	adminHandler  *AdminHandler
@@ -41,12 +41,12 @@ type Store interface {
 	Stats() (map[string]int64, error)
 }
 
-func ListenAndServe(cfg config.Config, store Store, smtpCfg email.SMTPConfig, jwtSecret string) error {
+func ListenAndServe(cfg *config.FileConfig, store Store, smtpCfg email.SMTPConfig, jwtSecret string) error {
 	log.Printf("Hyacine Go server listening on :%s", cfg.Port)
 	return http.ListenAndServe(":"+cfg.Port, NewRouter(cfg, store, smtpCfg, jwtSecret))
 }
 
-func NewRouter(cfg config.Config, store Store, smtpCfg email.SMTPConfig, jwtSecret string) http.Handler {
+func NewRouter(cfg *config.FileConfig, store Store, smtpCfg email.SMTPConfig, jwtSecret string) http.Handler {
 	app := &App{
 		cfg:          cfg,
 		store:        store,

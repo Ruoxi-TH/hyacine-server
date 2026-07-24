@@ -71,18 +71,12 @@ func main() {
 
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal(err)
-	}
-
-	fileCfg, err := config.LoadFileConfig()
-	if err != nil {
-		log.Printf("Warning: failed to load file config: %v, using defaults", err)
-		fileCfg = &defaultConfig
+		log.Fatalf("Failed to load config: %v", err)
 	}
 
 	dataDir := "./data"
-	if fileCfg.Database.Path != "" {
-		dataDir = fileCfg.Database.Path
+	if cfg.Database.Path != "" {
+		dataDir = cfg.Database.Path
 	}
 
 	db, err := store.New(dataDir)
@@ -94,15 +88,15 @@ func main() {
 	log.Printf("Database initialized at %s", dataDir)
 
 	smtpCfg := email.SMTPConfig{
-		Host:       fileCfg.SMTP.Host,
-		Port:       fileCfg.SMTP.Port,
-		Username:   fileCfg.SMTP.User,
-		Password:   fileCfg.SMTP.Password,
-		FromName:   fileCfg.SMTP.From,
-		Encryption: resolveEncryption(fileCfg.SMTP.Encryption),
+		Host:       cfg.SMTP.Host,
+		Port:       cfg.SMTP.Port,
+		Username:   cfg.SMTP.User,
+		Password:   cfg.SMTP.Password,
+		FromName:   cfg.SMTP.From,
+		Encryption: resolveEncryption(cfg.SMTP.Encryption),
 	}
 
-	jwtSecret := fileCfg.JWT.Secret
+	jwtSecret := cfg.JWT.Secret
 	if jwtSecret == "" {
 		jwtSecret = "change-this-secret-in-production"
 	}

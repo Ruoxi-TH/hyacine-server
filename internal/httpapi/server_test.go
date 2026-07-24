@@ -8,13 +8,14 @@ import (
 	"testing"
 
 	"hyacine-go-server/internal/config"
+	"hyacine-go-server/internal/email"
 	"hyacine-go-server/internal/stream"
 )
 
 func TestHealth(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 	res := httptest.NewRecorder()
-	NewRouter(config.Config{Port: "3000", NeteaseAPIBase: "http://127.0.0.1:3001"}).ServeHTTP(res, req)
+	NewRouter(&config.FileConfig{Port: "3000", NeteaseAPIBase: "http://127.0.0.1:3001"}, nil, email.SMTPConfig{}, "").ServeHTTP(res, req)
 
 	if res.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", res.Code, http.StatusOK)
@@ -39,7 +40,7 @@ func TestHealth(t *testing.T) {
 func TestHealthDirectModeCapabilities(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 	res := httptest.NewRecorder()
-	NewRouter(config.Config{Port: "3000"}).ServeHTTP(res, req)
+	NewRouter(&config.FileConfig{Port: "3000"}, nil, email.SMTPConfig{}, "").ServeHTTP(res, req)
 
 	var body struct {
 		Netease struct {
