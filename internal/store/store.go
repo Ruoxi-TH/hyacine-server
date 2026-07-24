@@ -29,6 +29,14 @@ type EmailCode struct {
 	CreatedAt string
 }
 
+type LoginLog struct {
+	ID        int64
+	UserID    int64
+	IP        string
+	UserAgent string
+	CreatedAt string
+}
+
 type Store struct {
 	db *sql.DB
 }
@@ -56,6 +64,42 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+func (s *Store) CreateLoginLog(userID int64, ip, userAgent string) error {
+	_, err := s.db.Exec(
+		"INSERT INTO login_logs (user_id, ip, user_agent) VALUES (?, ?, ?)",
+		userID, ip, userAgent,
+	)
+	return err
+}
+
+func (s *Store) ListLoginLogs(userID int64, limit int) ([]LoginLog, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.db.Query(
+		"SELECT id, user_id, ip, user_agent, created_at FROM login_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+		userID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var logs []LoginLog
+	for rows.Next() {
+		var l LoginLog
+		if err := rows.Scan(&l.ID, &l.UserID, &l.IP, &l.UserAgent, &l.CreatedAt); err != nil {
+			return nil, err
+		}
+		logs = append(logs, l)
+	}
+	return logs, nil
+}
+
+func (s *Store) UpdateUserLastLogin(id int64) error {
+	_, err := s.db.Exec("UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", id)
+	return err
+}
+
 func (s *Store) migrate() error {
 	_, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS users (
@@ -81,6 +125,17 @@ func (s *Store) migrate() error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
 		CREATE INDEX IF NOT EXISTS idx_email_codes_email ON email_codes(email);
+
+		CREATE TABLE IF NOT EXISTS login_logs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL,
+			ip TEXT NOT NULL DEFAULT '',
+			user_agent TEXT NOT NULL DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (user_id) REFERENCES users(id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_login_logs_user_id ON login_logs(user_id);
+		CREATE INDEX IF NOT EXISTS idx_login_logs_created_at ON login_logs(created_at);
 	`)
 	return err
 }

@@ -230,6 +230,18 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ip := r.Header.Get("X-Forwarded-For")
+	if ip == "" {
+		ip = r.Header.Get("X-Real-IP")
+	}
+	if ip == "" {
+		ip = r.RemoteAddr
+	}
+	userAgent := r.Header.Get("User-Agent")
+
+	_ = h.store.CreateLoginLog(user.ID, ip, userAgent)
+	_ = h.store.UpdateUserLastLogin(user.ID)
+
 	token, err := auth.GenerateAccessToken(user.ID, user.Username, user.Role, h.jwtSecret)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "failed to generate token"})
@@ -256,6 +268,27 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, sanitizeUser(user))
+}
+
+func (h *AuthHandler) LoginHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"message": "method not allowed"})
+		return
+	}
+
+	user, err := h.getUserFromRequest(r)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "unauthorized"})
+		return
+	}
+
+	logs, err := h.store.ListLoginLogs(user.ID, 20)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "failed to get login history"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, logs)
 }
 
 func (h *AuthHandler) getUserFromRequest(r *http.Request) (*store.User, error) {

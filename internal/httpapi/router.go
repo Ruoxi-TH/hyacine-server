@@ -39,6 +39,9 @@ type Store interface {
 	CountRecentEmailCodes(email string, since time.Time) (int, error)
 	CleanupExpired() error
 	Stats() (map[string]int64, error)
+	CreateLoginLog(userID int64, ip, userAgent string) error
+	ListLoginLogs(userID int64, limit int) ([]store.LoginLog, error)
+	UpdateUserLastLogin(id int64) error
 }
 
 func ListenAndServe(cfg *config.FileConfig, store Store, smtpCfg email.SMTPConfig, jwtSecret string) error {
@@ -70,6 +73,7 @@ func NewRouter(cfg *config.FileConfig, store Store, smtpCfg email.SMTPConfig, jw
 	mux.HandleFunc("/api/v1/auth/register", app.authHandler.Register)
 	mux.HandleFunc("/api/v1/auth/login", app.authHandler.Login)
 	mux.HandleFunc("/api/v1/auth/me", app.authHandler.Me)
+	mux.HandleFunc("/api/v1/auth/login-history", app.authHandler.LoginHistory)
 
 	mux.HandleFunc("/api/v1/admin/users", app.adminHandler.ListUsers)
 	mux.HandleFunc("/api/v1/admin/users/ban", app.adminHandler.BanUser)
