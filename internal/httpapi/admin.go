@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"hyacine-go-server/internal/auth"
 	"hyacine-go-server/internal/store"
 	"net/http"
 	"strconv"
@@ -11,13 +12,43 @@ import (
 type AdminHandler struct {
 	store       Store
 	emailSender EmailSender
+	jwtSecret   string
 }
 
-func NewAdminHandler(s Store, email EmailSender) *AdminHandler {
-	return &AdminHandler{store: s, emailSender: email}
+func NewAdminHandler(s Store, email EmailSender, jwtSecret string) *AdminHandler {
+	return &AdminHandler{store: s, emailSender: email, jwtSecret: jwtSecret}
+}
+
+func (h *AdminHandler) requireAdmin(w http.ResponseWriter, r *http.Request) *store.User {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "authorization required"})
+		return nil
+	}
+	parts := strings.SplitN(authHeader, " ", 2)
+	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "invalid authorization header"})
+		return nil
+	}
+	claims, err := auth.ParseToken(parts[1], h.jwtSecret)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "invalid or expired token"})
+		return nil
+	}
+	user, err := h.store.GetUserByID(claims.UserID)
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "user not found"})
+		return nil
+	}
+	if user.Role != "admin" {
+		writeJSON(w, http.StatusForbidden, map[string]string{"message": "admin access required"})
+		return nil
+	}
+	return user
 }
 
 func (h *AdminHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
+	if h.requireAdmin(w, r) == nil { return }
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"message": "method not allowed"})
 		return
@@ -54,6 +85,7 @@ type BanRequest struct {
 }
 
 func (h *AdminHandler) BanUser(w http.ResponseWriter, r *http.Request) {
+	if h.requireAdmin(w, r) == nil { return }
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"message": "method not allowed"})
 		return
@@ -97,6 +129,7 @@ func (h *AdminHandler) BanUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) UnbanUser(w http.ResponseWriter, r *http.Request) {
+	if h.requireAdmin(w, r) == nil { return }
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"message": "method not allowed"})
 		return
@@ -132,6 +165,7 @@ func (h *AdminHandler) UnbanUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	if h.requireAdmin(w, r) == nil { return }
 	if r.Method != http.MethodDelete {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"message": "method not allowed"})
 		return
@@ -175,6 +209,7 @@ type PromoteRequest struct {
 }
 
 func (h *AdminHandler) PromoteUser(w http.ResponseWriter, r *http.Request) {
+	if h.requireAdmin(w, r) == nil { return }
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"message": "method not allowed"})
 		return
@@ -210,6 +245,7 @@ func (h *AdminHandler) PromoteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminHandler) Stats(w http.ResponseWriter, r *http.Request) {
+	if h.requireAdmin(w, r) == nil { return }
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"message": "method not allowed"})
 		return

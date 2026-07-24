@@ -57,7 +57,7 @@ func NewRouter(cfg *config.FileConfig, store Store, smtpCfg email.SMTPConfig, jw
 		streams:      stream.NewStore(15 * time.Minute),
 		authHandler:  NewAuthHandler(store, smtpCfg, jwtSecret),
 	}
-	app.adminHandler = NewAdminHandler(store, app.authHandler.EmailSender())
+	app.adminHandler = NewAdminHandler(store, app.authHandler.EmailSender(), jwtSecret)
 	
 	if cfg.NeteaseAPIBase == "" {
 		app.directNetease = netease.NewDirectClient(15 * time.Second)

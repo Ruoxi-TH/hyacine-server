@@ -174,6 +174,12 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	_, userCount, _ := h.store.ListUsers(0, 1)
+	if userCount == 1 {
+		_ = h.store.UpdateUserRole(user.ID, "admin")
+		user.Role = "admin"
+	}
+
 	h.store.MarkEmailCodeUsed(emailCode.ID)
 
 	token, err := auth.GenerateAccessToken(user.ID, user.Username, user.Role, h.jwtSecret)
