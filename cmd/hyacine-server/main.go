@@ -94,11 +94,12 @@ func main() {
 	log.Printf("Database initialized at %s", dataDir)
 
 	smtpCfg := email.SMTPConfig{
-		Host:     fileCfg.SMTP.Host,
-		Port:     fileCfg.SMTP.Port,
-		User:     fileCfg.SMTP.User,
-		Password: fileCfg.SMTP.Password,
-		From:     fileCfg.SMTP.From,
+		Host:       fileCfg.SMTP.Host,
+		Port:       fileCfg.SMTP.Port,
+		Username:   fileCfg.SMTP.User,
+		Password:   fileCfg.SMTP.Password,
+		FromName:   fileCfg.SMTP.From,
+		Encryption: email.EncryptionMode(fileCfg.SMTP.Encryption),
 	}
 
 	jwtSecret := fileCfg.JWT.Secret
