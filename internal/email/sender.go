@@ -2,6 +2,7 @@ package email
 
 import (
 	"fmt"
+	"log"
 )
 
 type Sender struct {
@@ -22,7 +23,13 @@ func (s *Sender) Send(to, subject, body string) error {
 	}
 
 	msg := NewMessage(s.config.Username, s.config.FromName, to, subject, body)
-	return s.client.Send(msg)
+	err := s.client.Send(msg)
+	if err != nil {
+		log.Printf("[SMTP] Send failed: from=%s to=%s subject=%q error=%v", s.config.Username, to, subject, err)
+		return err
+	}
+	log.Printf("[SMTP] Send success: from=%s to=%s subject=%q", s.config.Username, to, subject)
+	return nil
 }
 
 func (s *Sender) SendHTML(to, subject, textBody, htmlBody string) error {
@@ -32,7 +39,13 @@ func (s *Sender) SendHTML(to, subject, textBody, htmlBody string) error {
 
 	msg := NewMessage(s.config.Username, s.config.FromName, to, subject, textBody)
 	msg.SetHTML(htmlBody)
-	return s.client.Send(msg)
+	err := s.client.Send(msg)
+	if err != nil {
+		log.Printf("[SMTP] SendHTML failed: from=%s to=%s subject=%q error=%v", s.config.Username, to, subject, err)
+		return err
+	}
+	log.Printf("[SMTP] SendHTML success: from=%s to=%s subject=%q", s.config.Username, to, subject)
+	return nil
 }
 
 func (s *Sender) SendVerificationCode(to, code string) error {

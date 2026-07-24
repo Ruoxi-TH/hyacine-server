@@ -35,6 +35,7 @@ type Store interface {
 	CreateEmailCode(email, code string, expiresAt time.Time) error
 	GetValidEmailCode(email, code string) (*store.EmailCode, error)
 	MarkEmailCodeUsed(id int64) error
+	DeleteEmailCode(email, code string) error
 	CountRecentEmailCodes(email string, since time.Time) (int, error)
 	CleanupExpired() error
 	Stats() (map[string]int64, error)
@@ -52,8 +53,8 @@ func NewRouter(cfg config.Config, store Store, smtpCfg email.SMTPConfig, jwtSecr
 		client:       &http.Client{Timeout: 20 * time.Second},
 		streams:      stream.NewStore(15 * time.Minute),
 		authHandler:  NewAuthHandler(store, smtpCfg, jwtSecret),
-		adminHandler: NewAdminHandler(store, nil),
 	}
+	app.adminHandler = NewAdminHandler(store, app.authHandler.EmailSender())
 	
 	if cfg.NeteaseAPIBase == "" {
 		app.directNetease = netease.NewDirectClient(15 * time.Second)

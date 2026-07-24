@@ -6,6 +6,7 @@ import (
 	"hyacine-go-server/internal/auth"
 	"hyacine-go-server/internal/email"
 	"hyacine-go-server/internal/store"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -29,6 +30,10 @@ func NewAuthHandler(s Store, emailCfg email.SMTPConfig, jwtSecret string) *AuthH
 		emailSender: email.NewSender(emailCfg),
 		jwtSecret:   jwtSecret,
 	}
+}
+
+func (h *AuthHandler) EmailSender() EmailSender {
+	return h.emailSender
 }
 
 type SendCodeRequest struct {
@@ -85,10 +90,15 @@ func (h *AuthHandler) SendCode(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.emailSender.SendVerificationCode(email, code); err != nil {
+		log.Printf("[SMTP] Failed to send verification code to %s: %v", email, err)
+		if delErr := h.store.DeleteEmailCode(email, code); delErr != nil {
+			log.Printf("[SMTP] Failed to rollback email code for %s: %v", email, delErr)
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "failed to send email"})
 		return
 	}
 
+	log.Printf("[SMTP] Verification code sent to %s", email)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "verification code sent"})
 }
 

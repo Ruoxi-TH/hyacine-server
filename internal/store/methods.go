@@ -142,6 +142,11 @@ func (s *Store) CleanupExpired() error {
 	return err
 }
 
+func (s *Store) DeleteEmailCode(email, code string) error {
+	_, err := s.db.Exec("DELETE FROM email_codes WHERE email = ? AND code = ? AND used = 0", email, code)
+	return err
+}
+
 func (s *Store) Stats() (map[string]int64, error) {
 	stats := make(map[string]int64)
 	var userCount, adminCount, bannedCount int64

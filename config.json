@@ -9,5 +9,22 @@
   "stream": {
     "buffer_size": 32768,
     "timeout": 30
+  },
+  "database": {
+    "type": "sqlite",
+    "path": "./data/hyacine.db"
+  },
+  "smtp": {
+    "host": "smtpdm.aliyun.com",
+    "port": 465,
+    "user": "",
+    "password": "",
+    "from": "风堇音乐 <noreply@example.com>",
+    "encryption": "ssl"
+  },
+  "jwt": {
+    "secret": "change-this-secret-in-production",
+    "access_ttl": "168h",
+    "refresh_ttl": "720h"
   }
 }

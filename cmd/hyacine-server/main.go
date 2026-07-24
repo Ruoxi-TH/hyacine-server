@@ -99,7 +99,7 @@ func main() {
 		Username:   fileCfg.SMTP.User,
 		Password:   fileCfg.SMTP.Password,
 		FromName:   fileCfg.SMTP.From,
-		Encryption: email.EncryptionMode(fileCfg.SMTP.Encryption),
+		Encryption: resolveEncryption(fileCfg.SMTP.Encryption),
 	}
 
 	jwtSecret := fileCfg.JWT.Secret
@@ -108,6 +108,17 @@ func main() {
 	}
 
 	log.Fatal(httpapi.ListenAndServe(cfg, db, smtpCfg, jwtSecret))
+}
+
+func resolveEncryption(val string) email.EncryptionMode {
+	switch strings.ToLower(strings.TrimSpace(val)) {
+	case "ssl", "tls":
+		return email.EncryptionTLS
+	case "starttls":
+		return email.EncryptionStartTLS
+	default:
+		return email.EncryptionStartTLS
+	}
 }
 
 func ensureConfig() {

@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"net/smtp"
 	"strconv"
 	"strings"
@@ -50,6 +51,7 @@ func (c *Client) Send(msg *Message) error {
 
 func (c *Client) sendTLS(msg *Message, data []byte) error {
 	addr := fmt.Sprintf("%s:%d", c.config.Host, c.config.Port)
+	log.Printf("[SMTP] Connecting via TLS to %s", addr)
 
 	tlsConfig := &tls.Config{
 		ServerName: c.config.Host,
@@ -60,12 +62,16 @@ func (c *Client) sendTLS(msg *Message, data []byte) error {
 
 	err := sendMailWithTLS(addr, tlsConfig, auth, c.config.Username, msg.To, data)
 	if err != nil && isAuthError(err) {
+		log.Printf("[SMTP] PlainAuth failed, retrying with LOGIN auth: %v", err)
 		auth = &loginAuth{
 			username: c.config.Username,
 			password: c.config.Password,
 			host:     c.config.Host,
 		}
 		err = sendMailWithTLS(addr, tlsConfig, auth, c.config.Username, msg.To, data)
+	}
+	if err != nil {
+		log.Printf("[SMTP] TLS send failed: %v", err)
 	}
 	return parseSMTPError(err)
 }
@@ -108,16 +114,22 @@ func sendMailWithTLS(addr string, tlsConfig *tls.Config, auth smtp.Auth, from, t
 
 func (c *Client) sendStartTLS(msg *Message, data []byte) error {
 	addr := fmt.Sprintf("%s:%d", c.config.Host, c.config.Port)
+	log.Printf("[SMTP] Connecting via StartTLS to %s", addr)
+
 	auth := smtp.PlainAuth("", c.config.Username, c.config.Password, c.config.Host)
 
 	err := smtp.SendMail(addr, auth, c.config.Username, []string{msg.To}, data)
 	if err != nil && isAuthError(err) {
+		log.Printf("[SMTP] PlainAuth failed, retrying with LOGIN auth: %v", err)
 		auth = &loginAuth{
 			username: c.config.Username,
 			password: c.config.Password,
 			host:     c.config.Host,
 		}
 		err = smtp.SendMail(addr, auth, c.config.Username, []string{msg.To}, data)
+	}
+	if err != nil {
+		log.Printf("[SMTP] StartTLS send failed: %v", err)
 	}
 	return parseSMTPError(err)
 }
